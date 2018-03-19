@@ -1,7 +1,7 @@
 
 I've always been passinate about making development process as fast as possible.
 This platform is to start using data at frontend so easily as possible without writing all these tedious SQL queries one by one.
-Zazler makes API to use SQL power safely and easily. This you can **raise prductivity by 30-40%**.
+Zazler makes API to use SQL power safely and easily. This you can **raise productivity by 30-40%**.
 
 Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way to see result in html.
 
