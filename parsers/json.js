@@ -1,0 +1,1 @@
+result(JSON.parse(input));

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<!--
+<%
+function escHtml(str) {
+  return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+}
+%> -->
+<html>
+<head>
+<title><%= escHtml(req.dbName) %></title>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+<style>
+* { font-family: "Trebutech MS", Verana, Arial, sans-serif; }
+body { margin: 28px 0 0 15px; } 
+table { border-collapse: collapse; } 
+td, th { padding: 2px 4px; border: 1px solid #bababa; }
+tr:hover, thead tr { background-color: rgb(240,240,240); } 
+h1 { font-size: 24px }
+#tables  { position: absolute; top: 5em; bottom: 10px; width: 200px; }
+#content { position: absolute; top: 5em; bottom: 10px; left: 220px; right: 10px; border-left: 1px solid #eee; overflow: hide; }
+#formats li { float: left; list-style-type: none; }
+#formats, #loc { clear: both; font-family: Verdana, Arial, Helvetica, serif; }
+#loc { line-height: 1.5em; padding-left: 2em; }
+#board-frame, #board-div { width: 100%; height: 93%; overflow: auto; }
+#board-div { font-family: "Courier New", monospace; padding: 10px; white-space: pre; }  /* TODO: Firefox */
+#zazler { position: fixed; right: 25px; top: 25px; }
+
+label { padding: 4px 6px } 
+label:hover { background-color: yellow } 
+ 
+/* https://www.iconfinder.com/search/?q=iconset%3Aionicons */ 
+.metaRef { float: right; color: white; 
+  background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAABmJLR0QA/wD/AP+gvaeTAAABM0lEQVRIie3Uv0oDQRAG8J9ib4hYiq9g4R+0NIlorLQRsfRRbIVUsbAWbQUfRLHUVgRFJUHFhKBncRE2Z7xcYsp8sBw7M/t9Mzu3wwhDxAGaaKE6DMIc8sH+ElF73Qf2SUz1S76IJ9RRxgLeAoEWVrCKB7yilJU8j1pAlnV9YDZJNt5vaT0wljWw6HeGJ+LrWscxPhP+vX4ymU8c3u0SU06IrGUhPsQNGsHBs5T4qs7G36KSJpAsO8JOSnypS3wjDMjS5GhAX1eBivhBNQPbVsr50NfCFY56iTJYk4vdiCb+EMgl9qfYbH+/sI19nTcwnSVz/veSZ5Jkw37JPZv+gyU8iyvZwBzedf7zyyjgUTzsCv1mkxzX14HAXWBPHddp V1TDS7C/EDc4wnlgr4urHWEwfANlS3lJ5EYHwgAAAABJRU5ErkJggg==")
+  no-repeat left center;
+  width: 28px; line-height: 24px;
+  text-decoration: none;
+}
+#tables li { line-height: 24px; padding-left: 10px; margin-left: -10px; list-style-type: none; border: 0 none; }
+#tables li:hover { list-style-type: disc }
+#tables li.act { background-color: yellow; border-radius: 3px; }
+</style>
+<script>
+var format = "html";
+var table = null;
+var limit = 2500;
+
+function showTable(ev)  { table = $(ev.target).closest("li").data("table"); actTable(table); showContent(ev.target.href); ev.preventDefault(); };
+function showMeta(ev)   { table = $(ev.target).closest("li").data("table"); actTable(table); showContent(ev.target.href, "html"); ev.preventDefault(); };
+function showFormat() {
+  format = this.value;
+  $("#tables a.tableRef").each(function () {
+    var myTable = $(this).closest("li").data("table");
+    $(this).attr("href", tableUrl(myTable));
+  });
+  if (table) showContent( $("#tables li.act .tableRef").get(0).href );
+};
+
+function actTable(t) {
+  $("#tables li").removeClass("act");
+  $("#tables li[data-table=" + t + "]").addClass("act");
+}
+
+function tableUrl(t) { return t + "." + format + "?limit=" + limit; } ;
+
+function showContent(url, f) {
+  var format = f || window.format;
+  $("#board-frame").hide().attr("src", "about:blank");
+  $("#board-div").hide().text("");
+  if ($("input[type=radio].format:checked").hasClass("plain")) {
+    var x = new XMLHttpRequest();
+    x.open("GET", url, false);
+    x.send();
+    $("#board-div").show().text(x.responseText);
+  } else {
+    $("#board-frame").show().attr("src", url);
+  }
+  $("#loc").text(url);
+};
+
+$(function () {
+  $("#tables a.tableRef").bind("click", function (ev) { if (ev.which == 1) showTable.apply(this, arguments); } );
+  $("#tables a.metaRef" ).bind("click", function (ev) { if (ev.which == 1) showMeta .apply(this, arguments); } );
+  $("[name=format]").bind("change", showFormat);
+  showFormat.call($("[name=format]:checked").get(0));
+});
+
+</script>
+</head>
+<body>
+
+<h1 style="margin-left: 20px">Database <%= escHtml(req.dbName) %></h1>
+<div id="tables">
+<ul>
+
+<% for (i = 0; i < result.data.length; i++) { 
+  row = result.data[i];
+  if (row.gentype == 'table') {
+    n = escHtml(row.name);
+%> <li data-table="<%= n %>">
+     <a target="board" class="tableRef" href="<%= n %>.html?limit=2500"><%= n %></a>
+     <a target="board" class="metaRef" href="_schema.html?select=name,gentype@type,rawtype,read,write,protect,comment&where=gentype!=table:tablename=T&T=<%= n %>">&nbsp;</a>
+   </li>
+<% } } %>
+
+</ul>
+</div>
+
+<div id="content">
+ <div id="formats">
+  <ul>
+  <li><label><input type="radio" name="format" value="min.datatable" checked="checked"> Table</label></li>
+  <li><label><input type="radio" name="format" value="html"> HTML</label></li>
+  <li><label><input type="radio" name="format" class="plain" value="json"> JSON</label></li>
+  <li><label><input type="radio" name="format" class="plain" value="xml"> XML</label></li>
+  <li><label><input type="radio" name="format" class="plain" value="csv"> CSV</label></li>
+  <li><label><input type="radio" name="format" class="plain" value="tsv"> TSV</label></li>
+  </ul>
+ </div>
+ <div id="loc">&nbsp;</div>
+ <iframe id="board-frame" name="board"></iframe>
+ <div id="board-div"></div>
+</div>
+<div id="zazler"><a href="http://www.zazler.com/" target="_blank"><img src="//www.zazler.com/share/zazler-logo.png"></a></div>
+</body>
+</html>

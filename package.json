@@ -1,0 +1,12 @@
+{
+  "name": "zazler",
+  "version": "1.0.0",
+  "author": "Kaiko Kaur <kaiko.kaur@gmail.com>",
+  "homepage": "http://www.zazler.com/",
+  "license": "Apache-2.0",
+  "description": "Speed up development process by exposing API from any SQL easily.",
+  "keywords": [ "database", "api", "mysql", "postgresql", "sqlite" ],
+  "contributors": [ { "name": "Kaiko Kaur", "email": "kaiko.kaur@gmail.com" } ],
+  "dependencies": { "md5": "latest", "mysql": "latest", "pg": "latest", "sqlite": "latest", "wildcard": "latest", "parsimmon": "latest", "express": "latest", "xml-js": "latest" },
+  "engines" : { "node" : ">=8.0.0 <10.0" }
+}
