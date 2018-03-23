@@ -621,7 +621,7 @@ class App {
     return V
   }
 
-  async fillSelect(S, vars, meta, schema = null, dreq) {
+  async fillSelect(S, vars, meta, schema = null, dreq={}) {
     if (!schema) schema = await this.schema();
     if (!meta) meta = this.meta;
 
