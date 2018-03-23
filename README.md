@@ -1,19 +1,21 @@
 
 I've always been passinate about making development process as fast as possible.
+
 This platform allows you to query SQL data at frontend so easily as possible without writing all tedious SQL queries one by one on server side.
 
 Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way to see result in html.
 
 Here is "hello world" example (assume there is sqlite database):
 
-    let DbApi = require("zazler")("file:///tmp/my.db", { read: "*" });
-    let srv = require('express')();
-    srv.use('/my/', DbApi.expressRequest);
+    let srv = require("express")();
+    let api = require("zazler")("file:///tmp/my.db", { read: "*" });
+    srv.use('/my/', api.expressRequest);
     srv.listen(80);
 
 It allows to query like this:
 
-    curl http://localhost/db/tablename.json # `tablename` content as json
+    curl http://localhost/my/tablename.json # `tablename` content as json
+    curl http://localhost/my/tablename.json?where=id=1 # row where id=1
 
 ## Connecting
 
@@ -35,8 +37,8 @@ Examples to connect to database:
 
 ## Limit database access
 
-    let DbApi = require('zazler');
-    dbApi = DbApi("mysql://host/db", {
+    let DBApi = require('zazler');
+    dbApi = DBApi("mysql://host/db", {
 
        // table and column level access limits
        // allows to query all columns from table1
