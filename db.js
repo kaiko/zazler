@@ -12,7 +12,7 @@ function urlToConnection(dbUrl) {
     if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
     if (u.query) // yeah yeah URLSearchParams
       u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!u[k]) u[k] = v })
+      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
 
     return c;
   } else
@@ -27,12 +27,20 @@ function urlToConnection(dbUrl) {
 
     if (u.query) // yeah yeah URLSearchParams
       u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!u[k]) u[k] = v })
+      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
 
     return c;
   } else
-  if (u.protocol === 'file:') {
-    u.type = 'lt';
+  if (['file:','sqlite:','sqlite3:'].includes(u.protocol)) {
+    let c = {
+      type: 'lt'
+    , filename: u.pathname
+    }
+
+    if (u.query) // yeah yeah URLSearchParams
+      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
+      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+    return c;
   } else throw "Unknown protocol: " + u.protocol;
   return u;
 }
@@ -54,6 +62,7 @@ function DbConn(props) {
   case 'mariadb':
   case 'mysql':
   case 'my': c = new DbConnMy(props); break;
+  case 'file':
   case 'sqlite':
   case 'lt': c = new DbConnLt(props); break;
   default: throw "Connection props must have `type` property with value 'sqlite', 'pg' or 'mysql'";
@@ -311,36 +320,36 @@ DbConnMy.prototype = {
 }
 // https://dev.mysql.com/doc/internals/en/com-query-response.html#column-type
 DbConnMy.types = {
-  [0x00]: [ 'decimal'   , 'float' ]    // MYSQL_TYPE_DECIMAL            0x00   Implemented by ProtocolBinary::MYSQL_TYPE_DECIMAL
-, [0x01]: [ 'tiny'      , 'int']       // MYSQL_TYPE_TINY               0x01   Implemented by ProtocolBinary::MYSQL_TYPE_TINY
-, [0x02]: [ 'short'     , 'int']       // MYSQL_TYPE_SHORT              0x02   Implemented by ProtocolBinary::MYSQL_TYPE_SHORT
-, [0x03]: [ 'long'      , 'int']       // MYSQL_TYPE_LONG               0x03   Implemented by ProtocolBinary::MYSQL_TYPE_LONG
-, [0x04]: [ 'float'     , 'float']     // MYSQL_TYPE_FLOAT              0x04   Implemented by ProtocolBinary::MYSQL_TYPE_FLOAT
-, [0x05]: [ 'double'    , 'float']     // MYSQL_TYPE_DOUBLE             0x05   Implemented by ProtocolBinary::MYSQL_TYPE_DOUBLE
-, [0x06]: [ 'null'      , 'str']       // MYSQL_TYPE_NULL               0x06   Implemented by ProtocolBinary::MYSQL_TYPE_NULL FIXME
-, [0x07]: [ 'timestamp' , 'timestamp'] // MYSQL_TYPE_TIMESTAMP          0x07   Implemented by ProtocolBinary::MYSQL_TYPE_TIMESTAMP
-, [0x08]: [ 'longlong'  , 'int']       // MYSQL_TYPE_LONGLONG           0x08   Implemented by ProtocolBinary::MYSQL_TYPE_LONGLONG
-, [0x09]: [ 'int24'     , 'int']       // MYSQL_TYPE_INT24              0x09   Implemented by ProtocolBinary::MYSQL_TYPE_INT24
-, [0x0a]: [ 'date'      , 'date']      // MYSQL_TYPE_DATE               0x0a   Implemented by ProtocolBinary::MYSQL_TYPE_DATE
-, [0x0b]: [ 'time'      , 'time']      // MYSQL_TYPE_TIME               0x0b   Implemented by ProtocolBinary::MYSQL_TYPE_TIME
-, [0x0c]: [ 'datetime'  , 'datetime']  // MYSQL_TYPE_DATETIME           0x0c   Implemented by ProtocolBinary::MYSQL_TYPE_DATETIME
-, [0x0d]: [ 'year'      , 'int']       // MYSQL_TYPE_YEAR               0x0d   Implemented by ProtocolBinary::MYSQL_TYPE_YEAR
-, [0x0e]: [ 'date'      , 'date']      // MYSQL_TYPE_NEWDATE [a]        0x0e   see Protocol::MYSQL_TYPE_DATE
-, [0x0f]: [ 'varchar'   , 'str']       // MYSQL_TYPE_VARCHAR            0x0f   Implemented by ProtocolBinary::MYSQL_TYPE_VARCHAR
-, [0x10]: [ 'bit'       , 'int']       // MYSQL_TYPE_BIT                0x10   Implemented by ProtocolBinary::MYSQL_TYPE_BIT
-, [0x11]: [ 'timestamp' , 'datetime']  // MYSQL_TYPE_TIMESTAMP2 [a]     0x11   see Protocol::MYSQL_TYPE_TIMESTAMP
-, [0x12]: [ 'datetime'  , 'datetime']  // MYSQL_TYPE_DATETIME2 [a]      0x12   see Protocol::MYSQL_TYPE_DATETIME
-, [0x13]: [ 'time'      , 'time']      // MYSQL_TYPE_TIME2 [a]          0x13   see Protocol::MYSQL_TYPE_TIME
-, [0xf6]: [ 'decimal'   , 'float']     // MYSQL_TYPE_NEWDECIMAL         0xf6   Implemented by ProtocolBinary::MYSQL_TYPE_NEWDECIMAL
-, [0xf7]: [ 'enum'      , 'str']       // MYSQL_TYPE_ENUM               0xf7   Implemented by ProtocolBinary::MYSQL_TYPE_ENUM
-, [0xf8]: [ 'set'       , 'str']       // MYSQL_TYPE_SET                0xf8   Implemented by ProtocolBinary::MYSQL_TYPE_SET
-, [0xf9]: [ 'tinyblob'  , 'str']       // MYSQL_TYPE_TINY_BLOB          0xf9   Implemented by ProtocolBinary::MYSQL_TYPE_TINY_BLOB
-, [0xfa]: [ 'mediumblob', 'str']       // MYSQL_TYPE_MEDIUM_BLOB        0xfa   Implemented by ProtocolBinary::MYSQL_TYPE_MEDIUM_BLOB
-, [0xfb]: [ 'longblob'  , 'str']       // MYSQL_TYPE_LONG_BLOB          0xfb   Implemented by ProtocolBinary::MYSQL_TYPE_LONG_BLOB
-, [0xfc]: [ 'blob'      , 'str']       // MYSQL_TYPE_BLOB               0xfc   Implemented by ProtocolBinary::MYSQL_TYPE_BLOB
-, [0xfd]: [ 'var_string', 'str']       // MYSQL_TYPE_VAR_STRING         0xfd   Implemented by ProtocolBinary::MYSQL_TYPE_VAR_STRING
-, [0xfe]: [ 'string'    , 'str']       // MYSQL_TYPE_STRING             0xfe   Implemented by ProtocolBinary::MYSQL_TYPE_STRING
-, [0xff]: [ 'geometry'  , 'str']       // MYSQL_TYPE_GEOMETRY           0xff   
+  [0x00]: [ 'decimal'   , 'float' ]    // MYSQL_TYPE_DECIMAL        0x00   Implemented by ProtocolBinary::MYSQL_TYPE_DECIMAL
+, [0x01]: [ 'tiny'      , 'int']       // MYSQL_TYPE_TINY           0x01   Implemented by ProtocolBinary::MYSQL_TYPE_TINY
+, [0x02]: [ 'short'     , 'int']       // MYSQL_TYPE_SHORT          0x02   Implemented by ProtocolBinary::MYSQL_TYPE_SHORT
+, [0x03]: [ 'long'      , 'int']       // MYSQL_TYPE_LONG           0x03   Implemented by ProtocolBinary::MYSQL_TYPE_LONG
+, [0x04]: [ 'float'     , 'float']     // MYSQL_TYPE_FLOAT          0x04   Implemented by ProtocolBinary::MYSQL_TYPE_FLOAT
+, [0x05]: [ 'double'    , 'float']     // MYSQL_TYPE_DOUBLE         0x05   Implemented by ProtocolBinary::MYSQL_TYPE_DOUBLE
+, [0x06]: [ 'null'      , 'str']       // MYSQL_TYPE_NULL           0x06   Implemented by ProtocolBinary::MYSQL_TYPE_NULL FIXME
+, [0x07]: [ 'timestamp' , 'timestamp'] // MYSQL_TYPE_TIMESTAMP      0x07   Implemented by ProtocolBinary::MYSQL_TYPE_TIMESTAMP
+, [0x08]: [ 'longlong'  , 'int']       // MYSQL_TYPE_LONGLONG       0x08   Implemented by ProtocolBinary::MYSQL_TYPE_LONGLONG
+, [0x09]: [ 'int24'     , 'int']       // MYSQL_TYPE_INT24          0x09   Implemented by ProtocolBinary::MYSQL_TYPE_INT24
+, [0x0a]: [ 'date'      , 'date']      // MYSQL_TYPE_DATE           0x0a   Implemented by ProtocolBinary::MYSQL_TYPE_DATE
+, [0x0b]: [ 'time'      , 'time']      // MYSQL_TYPE_TIME           0x0b   Implemented by ProtocolBinary::MYSQL_TYPE_TIME
+, [0x0c]: [ 'datetime'  , 'datetime']  // MYSQL_TYPE_DATETIME       0x0c   Implemented by ProtocolBinary::MYSQL_TYPE_DATETIME
+, [0x0d]: [ 'year'      , 'int']       // MYSQL_TYPE_YEAR           0x0d   Implemented by ProtocolBinary::MYSQL_TYPE_YEAR
+, [0x0e]: [ 'date'      , 'date']      // MYSQL_TYPE_NEWDATE [a]    0x0e   see Protocol::MYSQL_TYPE_DATE
+, [0x0f]: [ 'varchar'   , 'str']       // MYSQL_TYPE_VARCHAR        0x0f   Implemented by ProtocolBinary::MYSQL_TYPE_VARCHAR
+, [0x10]: [ 'bit'       , 'int']       // MYSQL_TYPE_BIT            0x10   Implemented by ProtocolBinary::MYSQL_TYPE_BIT
+, [0x11]: [ 'timestamp' , 'datetime']  // MYSQL_TYPE_TIMESTAMP2 [a] 0x11   see Protocol::MYSQL_TYPE_TIMESTAMP
+, [0x12]: [ 'datetime'  , 'datetime']  // MYSQL_TYPE_DATETIME2 [a]  0x12   see Protocol::MYSQL_TYPE_DATETIME
+, [0x13]: [ 'time'      , 'time']      // MYSQL_TYPE_TIME2 [a]      0x13   see Protocol::MYSQL_TYPE_TIME
+, [0xf6]: [ 'decimal'   , 'float']     // MYSQL_TYPE_NEWDECIMAL     0xf6   Implemented by ProtocolBinary::MYSQL_TYPE_NEWDECIMAL
+, [0xf7]: [ 'enum'      , 'str']       // MYSQL_TYPE_ENUM           0xf7   Implemented by ProtocolBinary::MYSQL_TYPE_ENUM
+, [0xf8]: [ 'set'       , 'str']       // MYSQL_TYPE_SET            0xf8   Implemented by ProtocolBinary::MYSQL_TYPE_SET
+, [0xf9]: [ 'tinyblob'  , 'str']       // MYSQL_TYPE_TINY_BLOB      0xf9   Implemented by ProtocolBinary::MYSQL_TYPE_TINY_BLOB
+, [0xfa]: [ 'mediumblob', 'str']       // MYSQL_TYPE_MEDIUM_BLOB    0xfa   Implemented by ProtocolBinary::MYSQL_TYPE_MEDIUM_BLOB
+, [0xfb]: [ 'longblob'  , 'str']       // MYSQL_TYPE_LONG_BLOB      0xfb   Implemented by ProtocolBinary::MYSQL_TYPE_LONG_BLOB
+, [0xfc]: [ 'blob'      , 'str']       // MYSQL_TYPE_BLOB           0xfc   Implemented by ProtocolBinary::MYSQL_TYPE_BLOB
+, [0xfd]: [ 'var_string', 'str']       // MYSQL_TYPE_VAR_STRING     0xfd   Implemented by ProtocolBinary::MYSQL_TYPE_VAR_STRING
+, [0xfe]: [ 'string'    , 'str']       // MYSQL_TYPE_STRING         0xfe   Implemented by ProtocolBinary::MYSQL_TYPE_STRING
+, [0xff]: [ 'geometry'  , 'str']       // MYSQL_TYPE_GEOMETRY       0xff   
 }
 
 function DbConnLt(props) {

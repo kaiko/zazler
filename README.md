@@ -1,27 +1,31 @@
 
 I've always been passinate about making development process as fast as possible.
-This platform is to start using data at frontend so easily as possible without writing all these tedious SQL queries one by one.
-Zazler makes API to use SQL power safely and easily. This you can **raise prductivity by 30-40%**.
+This platform allows you to query SQL data at frontend so easily as possible without writing all tedious SQL queries one by one on server side.
 
 Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way to see result in html.
 
-Here is brief example on server side:
+Here is "hello world" example (assume there is sqlite database):
 
-    // sqlite3 /tmp/my.db "create table a(id integer); insert into a values(1);"
-
-    var {App} = require("zazler");
-    var app = new App("sqlite:///tmp/my.db", { read: "*" });
-    var srv = require('express');
-    srv.use('/my/', app.expressRequest);
+    let DbApi = require("zazler")("file:///tmp/my.db", { read: "*" });
+    let srv = require('express')();
+    srv.use('/my/', DbApi.expressRequest);
     srv.listen(80);
 
 It allows to query like this:
 
-    curl http://localhost/db/a.json # gives whole table
+    curl http://localhost/db/tablename.json # `tablename` content as json
+
+## Connecting
+
+Examples to connect to database:
+
+  - postgresql: `psql://user:pass@host:port/db` or { type: 'pg', hostname: '...', database: '...'} (look at module `pg` for all options)
+  - mysql: `mysql://user:pass@host:port/db` or { type: 'my', hostname: '...', database: '...'} (look at module `mysql` for all options)
+  - sqlite: `file:///tmp/db.file`
 
 ## Query data
 
- - `?where=id=10` − query by id
+ - `?where=id=10` − query by id (there is shorter version: `?id:=10` (yes, with colon)
  - `?where=like(firstname,L)&L=J%25` − query by text matching. Notice how where expression is using variable L.
  - `?order=firstname` − for ordering data.
  - `?limit=10` − for limiting output.
@@ -31,7 +35,8 @@ It allows to query like this:
 
 ## Limit database access
 
-    app.db("mysql://host/db", {
+    let DbApi = require('zazler');
+    dbApi = DbApi("mysql://host/db", {
 
        // table and column level access limits
        // allows to query all columns from table1

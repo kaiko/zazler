@@ -107,7 +107,7 @@ class App {
   evError(e) { this.events.onError.forEach(fn => fn(e)); }
 
   setConf(conf) {
-    this.index = conf.index || '_schema.dashboard';
+    this.index = conf.index || '_schema.json'; // TODO: dashboard
     
     this.tmplDirs = [... (conf.templates || []), __dirname + '/templates/'];
     this.prsDirs  = [... (conf.parsers   || []), __dirname + '/parsers/'  ];
@@ -790,7 +790,7 @@ async function inputRows(dirs, fmt, body) {
 }
 
 
-module.exports.App = App;
+module.exports = (con,conf) => new App(con, conf);
 
 // used to throw new NeedAuth()
 function NeedAuth() { }

@@ -1,8 +1,5 @@
 
-let express = require('express');
-let App = require('zazler').App;
-
-let a = new App({file: ':memory:', type: 'lt'}, { read: '*' } );
-srv = express();
-srv.use('/foo/', a.expressRequest);
+let srv = require('express')();
+let api = require('zazler') ("file:///tmp/my.db", { read: '*' } );
+srv.use('/foo/', api.expressRequest);
 srv.listen(3000);

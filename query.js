@@ -1,7 +1,8 @@
-const pmon = require('parsimmon');
+const P = require('parsimmon');
 const util = require('util');
 const testSql = require('sqlite').open(':memory:', { Promise });
 const Opts = require('./opts');
+const {QFunctions} = require('./query-functions');
 
 Object.map = (o, fn) => Object.keys(o).map((k, i) => fn(k, o[k], i));
 Object.onValues = function (o, fn) {
@@ -21,84 +22,71 @@ Map.prototype.setWith = function (key, val, fn) {
 
 trace = x => { console.log(x); return x; }
 
-opFn = op => (fnName, Sql, inf, args) => args.map(a => a.sqlSnippet(Sql)).join(' ' + op + ' ');
-sameFn = (fnName, Sql, inf, args) => fnName + '(' + args.map(a => a.sqlSnippet(Sql)).join(', ') + ')';
+///////////////
 
-QFunctions = {
-  "isnull" : [ "=1", (fnName, Sql, inf, [arg]) => '(' + arg.sqlSnippet(Sql) + ') IS NULL']
-, "notnull": [ "=1", (fnName, Sql, inf, [arg]) => '(' + arg.sqlSnippet(Sql) + ') IS NOT NULL']
-, "not"    : [ "=1", (fnName, Sql, inf, [arg]) => 'NOT (' + arg.sqlSnippet(Sql) + ')']
-, "null"   : [ "=0", () => 'NULL' ]
-, "true"   : [ "=0", (_, Sql) => Sql.hasBooleans ? 'TRUE' : '1' ]
-, "false"  : [ "=0", (_, Sql) => Sql.hasBooleans ? 'FALSE' : '0' ]
-, "if"     : [ ">3", ifFn ]
-, "nullif" : [ "=2", sameFn ]
-, "between": [ "=3", (f, S, i, [s,a,b]) => '(' + s.sqlSnippet(S) + ") BETWEEN (" + a.sqlSnippet(S) + ") AND (" + b.sqlSnippet(S) + ")" ]
-, "in"     : [ ">2", (f, S, i, args) =>    '(' + args[0].sqlSnippet(S) +  ') IN (' + args.slice(1).map(a => a.sqlSnippet(S)).join(', ') + ')' ]
-, "concat" : [ ">1", (f, S, i, args) => (S === SqlLt || S === SqlPg) ? opFn('||')(f,S,i,args) : sameFn(f,S,i,args) ]
-, "choose" : [ ">2", chooseFn ]
-, "str"    : [ "=1", castToFn({_: 'CHAR', pg: 'VARCHAR' }) ]
-, "num"    : [ "=1", castToFn({_: 'NUMERIC' }) ]
-, "int"    : [ "=1", castToFn({_: 'INTEGER', pg: 'BIGINT', my: 'SIGNED' }) ]
-, "double" : [ "=1", castToFn({_: 'DECIMAL' }) ]
-, "cast"   : [ "=1", castFn ]
-, "coalesce":[ ">1", sameFn ]
-, "like"   : [ "=2", opFn("LIKE") ]
-, "ilike"  : [ "=2", (fn, S, i, [a,b]) => {
-      if (S.type == 'pg') return opFn('ILIKE').apply(this, [fn, S, i, [a,b]]);
-      else return 'lower(' + a.sqlSnippet(S) + ') LIKE LOWER(' + b.sqlSnippet(S) + ')';
-
-  } ]
-, "len"   :  [ "=1",  (fn, S, i, [a]) => "LENGTH(" + a.sqlSnippet(S) + ")" ] // TODO: length should also be supported because it's easier to user
-, "length":  [ "=1",  (fn, S, i, [a]) => "LENGTH(" + a.sqlSnippet(S) + ")" ] // TODO: length should also be supported because it's easier to user
-, "lower" :  [ "=1",  sameFn ]
-, "upper" :  [ "=1",  sameFn ]
-, "trim"  :  [ "=1",  sameFn ] // FIXME: database differences
-, "ltrim" :  [ "=1",  sameFn ]
-, "rtrim" :  [ "=1",  sameFn ]
-//  ),( "strpos",  More 2, [ (dbAll, sameFn) ] // FIXME: SQLite doesn't have strpos
-, "substr":  [ ">2",  sameFn ] // FIXME: 2 OR 3 arguments
-, "replace": [ "=3",  sameFn ]
-, "lpad"  :  [ ">2",  sameFn ] // FIXME: 2 OR 3
-, "rpad"  :  [ ">2",  sameFn ] // FIXME: 2 OR 3
-
-, "date"  :  [ "=1",  sameFn ]
-, "now"   :  [ ">-1", (fn, S, i, args) => ({
-      lt: "datetime('now', 'localtime')",
-      pg: "current_timestamp::timestamp(0)"
-    })[S.type] || 'current_timestamp' ]
-// , "dt",      [ ">0",  dtFn  ) ] TODO
-// , "extr",    [ "=1",  extrFn) ] TODO
-
-, "countif": [ "=1",  (fn, S, i, [a]) => "COUNT(CASE WHEN " + a.sqlSnippet(S) + " THEN 1 ELSE NULL END)" ]
-, "count"  : [ "=1",  sameFn ]
-, "ceil"   : [ "=1",  sameFn ]
-, "floor"  : [ "=1",  sameFn ]
-, "random" : [ "=0",  sameFn ]
-, "round"  : [ ">1",  sameFn ] // FIXME 1 OR 2 arguments
-, "avg"    : [ "=1",  sameFn ]
-, "exp"    : [ "=1",  sameFn ]
-, "abs"    : [ "=1",  sameFn ]
-, "md5"    : [ "=1",  sameFn ]
-, "greatest":[ "=1",  sameFn ]
-, "least"   :[ "=1",  sameFn ]
-, "min"    : [ "=1",  sameFn ]
-, "max"    : [ "=1",  sameFn ]
-, "sum"    : [ "=1",  sameFn ]
-, "every"  : [ "=1",  sameFn ]
-
-, "and"    : [ ">1",  opFn('AND') ]
-, "or"     : [ ">1",  opFn('OR') ]
-, "xor"    : [ ">1",  opFn('XOR') ]
-, "add"    : [ ">1",  opFn('+') ]
-, "div"    : [ ">1",  opFn('/') ]
-, "sub"    : [ ">1",  opFn('-') ]
-, "mul"    : [ ">1",  opFn('*') ]
-
-, "desc":[ "=1",  (_, S, i, [a]) => a.sqlSnippet(S) + " DESC"]
-, "asc": [ "=1",  (_, S, i, [a]) => a.sqlSnippet(S) + " ASC" ]
+SqlPg = {
+    type: "pg"
+  , hasBooleans: true
+  , esc:  v => ("'" + v.replace(/'/g, '\\\'') +  "'")
+  , name: v => ('"' + v.replace(/"/g, '""') + '"')
 }
-// let QValue = () => throw "QValue 
+
+SqlMy = {
+    type: "my"
+  , hasBooleans: true
+  , esc: v => ("'" + v.replace(/'/g, '\\\'') +  "'")
+  , name: v => ('`' + v.replace(/`/g, '``') + '`')      // TODO  check
+}
+
+SqlLt = {
+    type: "lt"
+  , hasBooleans: false
+  , esc : v => ("'" + v.replace(/'/g, '\'\'') + "'")
+  , name: v => ('"' + v.replace(/"/g,   '""') + '"')
+}
+
+SqlJsPseudo = { // This is used to get SQL expression without escaping
+    type: "js"
+  , hasBooleans: true
+  , esc : v => v
+  , name: v => v
+}
+
+
+////////////////
+
+let QParser = P.createLanguage({
+  // lists and stuff
+    select: r => r.selectItem.sepBy(r.commaSep).trim(P.optWhitespace).map( ls => new QList(ls) )
+  , list  : r => r.expr      .sepBy(r.commaSep).trim(P.optWhitespace).map( ls => new QList(ls) )
+  , limit : r => P.alt( r.tokenv, r.nrpos ).sepBy(r.commaSep).trim(P.optWhitespace).map(v => new QLimit(v[0], v[1]))
+  , value : r => r.expr.trim(P.optWhitespace)
+
+  // values
+  , expr  : r  => P.alt( r.not, r.op, r.par, r.cnt, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv )
+  , true_ : () => P.string("true" ).result(qTrue)
+  , false_: () => P.string("false").result(qFalse)
+  , null_ : () => P.string("null" ).result(qNull)
+  , cnt   : () => P.string('count(*)').result(new QRaw('count(*)'))
+  , nr    : () => P.regexp(/-?(0|[1-9][0-9]*)([.][0-9]+)?([eE][+-]?[0-9]+)?/).map(Number).map(n => new QFloat(n))
+  , nrpos : () => P.regexp(/[0-9]+/).map(Number).map(n => new QInt(n))
+  , fn    : r  => P.seq(r.token, P.string(".").then(r.token).atMost(1), P.regexp(/\s*\(\s*/), r.expr.sepBy(r.commaSep), P.regexp(/\s*\)/)).map(([name, [i], _, args]) => new QFn(name, i, args))
+  , op    : r  => P.seq(r.opExpr, P.seq(r.opStr, r.opExpr).atLeast(1)).map(([fst, ls]) => new QOp(fst, ls) )
+  , par   : r  => P.regexp(/\s*\(\s*/).then(r.expr).skip(P.regexp(/\s*\)\s*/)).map(v => new QPar(v))
+  , fld   : r  => P.seq(r.token, P.string("."), r.token).map(([t,p,f]) => new QField(t,f))
+  , not   : r  => P.regexp(/\s*!\s*/).then(r.expr).map(v => new QFn("not", null, [v]))
+
+  // helpers
+  , selectItem : r  => P.alt( P.seq(r.expr, P.regexp(/\s*@\s*/), r.token).map(([v,at,as]) => new QAs(v, new QName(as))), r.expr)
+  , token      : r  => P.regexp(/[a-z_]([a-z0-9_])*/i)
+  , tokenv     : r  => r.token.map(x => new QToken(x))
+  // , var_       : r  => P.string('$').then(r.token).map(x => new QVar(x))
+  , commaSep   : () => P.regexp(/\s*,\s*/)
+  , opStr      : () => P.alt
+          ( P.alt( P.string("=="), P.string("!=="), P.string("!="), P.string("<="), P.string(">="), P.oneOf('+-*/%=<>|:')).trim(P.optWhitespace)
+          , P.regexp(/\s+(and|or)\s+/i).map(o => o.toUpperCase()) )
+  , opExpr     : r  => P.alt( r.not, r.par, r.cnt, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv) // everything like in expr but without 'op' to avoid recursion
+});
 
 QShortFn = {
     ":": (a,b) => new QOp(a, [["=", b]])
@@ -107,6 +95,24 @@ QShortFn = {
   , "<": (a,b) => new QOp(a, [["!=", b]])
   , "~": (a,b) => new QFn("ilike", null, [a,b])
 }
+
+/*
+// testing parsing
+process.nextTick( () => {
+  console.log('a', (QParser.value.tryParse('coalesce(1)')).sqlSnippet(SqlJsPseudo));
+  console.log('b', (QParser.value.tryParse('coalesce( 1 )')).sqlSnippet(SqlJsPseudo));
+  console.log('c', (QParser.value.tryParse('coalesce( 1 , 2, 3)')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse('cast.int ( 1 )')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse(' true')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse(' false ')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse('null  ')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse('1=2  ')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse('1=  2  ')).sqlSnippet(SqlJsPseudo));
+  console.log('d', (QParser.value.tryParse(' 1 =  2  ')).sqlSnippet(SqlJsPseudo));
+})
+*/
+
+///////////////
 
 function QValue() { }
 QValue.prototype = {
@@ -421,96 +427,6 @@ QJoin.prototype = protoQ({
 , isSame    : function (el) { return el === this || (this.table === el.table && this.type === el.type && this.as.isSame(el.as) && this.on.isSame(el.on)) }
 });
 
-function ifFn (fnName, Sql, inf, args) {
-  var i, cond = [], els = args.length % 2 ? ' ELSE ' + args[args.length - 1].sqlSnippet(Sql) : '';
-  
-  for (i = 0; i < args.length - 1; i += 2)
-    cond.push('WHEN ' + args[i].sqlSnippet(Sql) + ' THEN ' + args[i + 1].sqlSnippet(Sql));
-  return 'CASE ' + cond.join(' ') + els + ' END';
-}
-
-function chooseFn (fnName, Sql, inf, args) {
-  return 'CASE ' + args[0].sqlSnippet(Sql) + args.slice(1).map((a, idx) => 'WHEN ' + idx + ' THEN ' + a.sqlSnippet(Sql)).join(' ') + ' END';
-}
-
-function castToFn(types) {
-  return (fnName, Sql, inf, [arg]) => 'CAST(' + arg.sqlSnippet(Sql) + ' AS ' + (types[Sql.type] || types._) + ')';
-}
-function castFn(fnName, Sql, inf, [arg]) {
-  inf = (inf||'').toLowerCase();
-
-  if (!inf || !castFn.typemap[inf]) {
-    throw "Invalid type to cast: " + inf;
-  }
-  else return castToFn(castFn.typemap[inf]).apply(this, arguments);
-}
-castFn.typemap = {
-   "int"     : {_: 'INTEGER', pg: 'BIGINT' , my: 'SIGNED' }
-  ,'time'    : {_: 'TIME'}
-  ,'date'    : {_: 'DATE'}
-  ,'datetime': {_: 'DATETIME'}
-  ,'num'     : {_: 'NUMERIC'}
-  ,'str'     : {_: 'CHAR', pg: 'VARCHAR' }
-  ,'money'   : {_: 'MONEY' }
-}
-
-SqlPg = {
-    type: "pg"
-  , hasBooleans: true
-  , esc:  v => ("'" + v.replace(/'/g, '\\\'') +  "'")
-  , name: v => ('"' + v.replace(/"/g, '""') + '"')
-}
-
-SqlMy = {
-    type: "my"
-  , hasBooleans: true
-  , esc: v => ("'" + v.replace(/'/g, '\\\'') +  "'")
-  , name: v => ('`' + v.replace(/`/g, '``') + '`')      // TODO  check
-}
-
-SqlLt = {
-    type: "lt"
-  , hasBooleans: false
-  , esc : v => ("'" + v.replace(/'/g, '\'\'') + "'")
-  , name: v => ('"' + v.replace(/"/g,   '""') + '"')
-}
-
-SqlJsPseudo = { // This is used to get SQL expression without escaping
-    type: "js"
-  , hasBooleans: true
-  , esc : v => v
-  , name: v => v
-}
-
-let QParser = pmon.createLanguage({
-  // lists and stuff
-    select: r => r.selectItem.sepBy(r.comma).map( ls => new QList(ls) )
-  , list  : r => r.value     .sepBy(r.comma).map( ls => new QList(ls) )
-  , limit : r => pmon.alt( r.tokenv, r.nrpos ).sepBy(r.comma).map(v => new QLimit(v[0], v[1]))
-
-  // values
-  , value : r => pmon.alt( r.not, r.op, r.par, r.cnt, r.fni, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv )
-  , true_ : () => pmon.string("true" ).result(qTrue)
-  , false_: () => pmon.string("false").result(qFalse)
-  , null_ : () => pmon.string("null" ).result(qNull)
-  , cnt   : () => pmon.string('count(*)').result(new QRaw('count(*)'))
-  , nr    : () => pmon.regexp(/-?(0|[1-9][0-9]*)([.][0-9]+)?([eE][+-]?[0-9]+)?/).map(Number).map(n => new QFloat(n))
-  , nrpos : () => pmon.regexp(/[0-9]+/).map(Number).map(n => new QInt(n))
-  , fn    : r => pmon.seq(r.token,                            pmon.string("("), r.value.sepBy(r.comma), pmon.string(")")).map(([name,    a,args]) => new QFn(name, null, args))
-  , fni   : r => pmon.seq(r.token, pmon.string("."), r.token, pmon.string("("), r.value.sepBy(r.comma), pmon.string(")")).map(([name,p,i,a,args]) => new QFn(name, i   , args))
-  , op    : r => pmon.seq(r.opVal, pmon.seq(r.opStr, r.opVal).atLeast(1)).map(([fst, ls]) => new QOp(fst, ls) )
-  , par   : r => pmon.string("(").then(r.value).skip(pmon.string(')')).map(v => new QPar(v))
-  , fld   : r => pmon.seq(r.token, pmon.string("."), r.token).map(([t,p,f]) => new QField(t,f))
-  , not   : r => pmon.string("!").then(r.value).map(v => new QFn("not", null, [v]))
-
-  // helpers
-  , selectItem : r => pmon.alt( pmon.seq(r.value, pmon.string("@"), r.token).map(([v,at,as]) => new QAs(v, new QName(as))), r.value)
-  , token : r => pmon.regexp(/[a-z_]([a-z0-9_])*/i)
-  , tokenv: r => r.token.map(x => new QToken(x))
-  , comma : () => pmon.string(",")
-  , opStr : () => pmon.alt( pmon.string("=="), pmon.string("!=="), pmon.string("!="), pmon.string("<="), pmon.string(">="), pmon.oneOf('+-*/%=<>|:') )
-  , opVal : r => pmon.alt( r.not, r.par, r.cnt, r.fni, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv) // everything like in value but without 'op' to avoid recursion
-});
 
 // use QSelect.tearUp to get right arguments from object
 function QSelect(sel, from, where, group, having, ord, lim, opts) {
