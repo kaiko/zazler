@@ -23,20 +23,6 @@ Object.onValuesA = async (o, fn) => {
   let K = Object.keys(o);
   return (await Promise.all(K.map((k, i) => fn(o[k], k, i)))).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
 }
-// `[].find(fn)` gives element where fn(a[i]) is true
-// this function works like find but results fn(a[i]) result, not array element
-Array.findMap = (array, fn) => {
-  for (let i = 0; i < array.length; i++) {
-    let n = fn(array[i]);
-    if (n) return n;
-  }
-}
-Array.findMapA = async (array, fn) => {
-  for (let i = 0; i < array.length; i++) {
-    let n = await fn(array[i]);
-    if (n) return n;
-  }
-}
 
 Set.fromArray = a => a.reduce((s, e) => s.add(e), new Set());
 
@@ -131,7 +117,6 @@ class App {
       if (!this.auth.Q.select) throw "auth must have `select` option. NB! everything you put into select can be accessed in the web after authentication";
     }
 
-
     this.filt   = (conf.filter||conf.filters||[]).map(f => Select.tearUp(f.table, null, f).Q );
     this.vars   = conf.vars || [];
     this.consts = conf.const || conf.consts || [];
@@ -150,6 +135,9 @@ class App {
       if (!f) this.metaT[t]    = v;
       if ( f) this.metaF[t][f] = v;
     });
+
+    this.varsWithout$  = conf.hasOwnProperty('varsWithout$' ) ? !!conf.varsWithout$  : false;
+    this.inlineStrings = conf.hasOwnProperty('inlineStrings') ? !!conf.inlineStrings : false;
   }
 
   meta(t, f = null) { return f ? (this.metaF[t]||{})[f] || null : this.metaT[t] || null; }
@@ -237,7 +225,7 @@ class App {
         let b = x.elements[0].elements[1];
         let r = b.elements[0]; // request 
         R.vars.soapHeader = require('xml-js').js2xml(h);
-        let soapVars = r.elements.reduce((a,c) => { console.log(util.inspect(c)); return Object.assign(a, {[c.name]: c.elements[0].text}) }, {});
+        let soapVars = r.elements.reduce((a,c) => Object.assign(a, {[c.name]: c.elements[0].text}), {});
         Object.assign(R.vars);
       } catch (e) {
         this.evError(e);
@@ -390,7 +378,7 @@ class App {
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
     res.rowsTotal = async () => {
-      let csql =  Q.count().sqlSnippet(tp);
+      let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
       return parseInt((await cn.query(csql)).data[0].count, 10);
     }
@@ -437,7 +425,6 @@ class App {
           break;
        }
     }
-    // await Promise.all( irows.map(i => Array.findMapA(rules, async r => await r.match(i, sch, vars, me.sqlFn, meta) ) ));
 
     let db = await this.conn.transaction();
 
@@ -501,7 +488,7 @@ class App {
     let evArg = Object.assign(req,
         { req: Object.assign({table, format, vars}, req)
         , vars: vars
-        , auth: meta.auth
+        , auth: async () => { try { return await meta.auth(); } catch (e) { if (e instanceof NeedAuth) return null; else throw e; } }
         , newDb: this.templNewDb.bind(this)
         , query: async function (qTable, qVars) {
             let [qt,fmt] = breakOn(qTable, '.');
@@ -539,12 +526,13 @@ class App {
     return new Promise((ok, bad) => {
       F.script.runInNewContext(Object.assign({}, evArg, F.ctx
         , Object.onValues(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } )
-        , { result: queryResult
-        , contentType: (t,c) => result.contentType = t
-        , __success__: ok
-        , __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
-        , print:   x => { if (x !== undefined && x !== null) result.out += x; }
-        , printLn: x => { result.out += x; }
+        , { console: console
+        ,   result: queryResult
+        ,   contentType: (t,c) => result.contentType = t
+        ,   __success__: ok
+        ,   __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
+        ,   print:   x => { if (x !== undefined && x !== null) result.out += x; }
+        ,   printLn: x => { result.out += x; }
         }));
     })
     .then(() => { return result }).catch(e => { this.evError(e); result.error = e.toString(); return result; });
@@ -561,9 +549,8 @@ class App {
         let db = await a.conn.transaction();
         await db.exec('CREATE TABLE ' + name + ' (' + names.join(', ') + ')'); // TODO: escaping and sutff
         let ins = 'INSERT INTO ' + name + '(';
-        await Promise.all(rows.map(r =>
-          db.exec(ins + Object.keys(r).join(',') + ') VALUES (' + Object.keys(r).map(k=>jsToQVal(r[k]).sqlSnippet(SqlLt)).join(',') + ')')
-        ));
+        for (let r = 0; r < rows.length; r.length)
+          await db.exec(ins + Object.keys(rows[r]).join(',') + ') VALUES (' + Object.keys(rows[r]).map(k=>jsToQVal(rows[r][k]).sqlSnippet(SqlLt)).join(',') + ')');
         await db.commit();
         await a.updateSchema()
       } },
@@ -654,13 +641,22 @@ class App {
     let dumbSql = (dreq.url || '').match(/\.wsdl$/);
     if (dumbSql) S = S.setLimit(0)
 
+    S = S.travVar(V => {
+      if (typeof vars[V.v] !== 'undefined') return jsToQVal(vars[V.v]);
+      else if (dumbSql) return V.toNull();
+      else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
+    })
     S = S.travToken(T => {
         let tb = seenFieldsIdx.get(T.token);
         if (tb) 
             return T.toField(tb.as)
-        else if (typeof vars[T.token] !== 'undefined')
+        else if (this.varsWithout$ && typeof vars[T.token] !== 'undefined')
             return jsToQVal(vars[T.token]);
-        else return dumbSql ? T.toNull() : T.toString(); // hack
+        else if (dumbSql)
+          return T.toNull(); // hack
+        else if (this.inlineStrings)
+          return T.toString();
+        else throw ("Unknown token: " + T.token);
     });
 
     // test for protected fields;
@@ -681,6 +677,7 @@ class App {
   }
 
   async updateSchema() {
+    await this.block;
     this.block = new Promise( ub => this.unblock = ub ) ;
     this._schema = null;
     await this.schema();

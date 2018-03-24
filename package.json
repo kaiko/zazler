@@ -1,8 +1,8 @@
 {
   "name": "zazler",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com> (http://www.zazler.com/)",
-  "homepage": "http://www.zazler.com/",
+  "homepage": "http://zazler.com/",
   "license": "Apache-2.0",
   "readme": "README.md",
   "description": "Speed up development process by exposing API from any SQL easily. Especially useful for Android/iPhone development.",

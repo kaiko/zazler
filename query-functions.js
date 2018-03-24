@@ -3,7 +3,39 @@
 opFn = op => (fnName, Sql, inf, args) => args.map(a => a.sqlSnippet(Sql)).join(' ' + op + ' ');
 sameFn = (fnName, Sql, inf, args) => fnName + '(' + args.map(a => a.sqlSnippet(Sql)).join(', ') + ')';
 
-QFunctions = {
+chooseFn = (fnName, Sql, inf, args) => 
+  'CASE ' + args[0].sqlSnippet(Sql) + args.slice(1).map((a, idx) => 'WHEN ' + idx + ' THEN ' + a.sqlSnippet(Sql)).join(' ') + ' END';
+
+castToFn = types => (fnName, Sql, inf, [arg]) => 'CAST(' + arg.sqlSnippet(Sql) + ' AS ' + (types[Sql.type] || types._) + ')';
+castFn = (fnName, Sql, inf, args) => {
+
+  if (!inf) throw new Error("use function cast as cast.int(x), cast.str(x) etc (possible types: " + castFn.types.join(', ') + ')');
+  inf = inf.toLowerCase();
+  if (!castFn.typemap[inf]) throw new Error("Invalid type to cast: " + inf + '; possible types: ' + castFn.types.join(', '));
+
+  return castToFn(castFn.typemap[inf])(fnName, Sql, inf, args);
+}
+
+castFn.typemap = {
+   "int"     : {_: 'INTEGER', pg: 'BIGINT' , my: 'SIGNED' }
+  ,'time'    : {_: 'TIME'}
+  ,'date'    : {_: 'DATE'}
+  ,'datetime': {_: 'DATETIME'}
+  ,'num'     : {_: 'NUMERIC'}
+  ,'str'     : {_: 'CHAR', pg: 'VARCHAR' }
+  ,'money'   : {_: 'MONEY' }
+}
+castFn.types = Object.keys(castFn.typemap);
+
+ifFn = (fnName, Sql, inf, args) => {
+  let cond = [], els = args.length % 2 ? ' ELSE ' + args[args.length - 1].sqlSnippet(Sql) : '';
+  
+  for (let i = 0; i < args.length - 1; i += 2)
+    cond.push('WHEN ' + args[i].sqlSnippet(Sql) + ' THEN ' + args[i + 1].sqlSnippet(Sql));
+  return 'CASE ' + cond.join(' ') + els + ' END';
+}
+
+module.exports.QFunctions = {
   "isnull" : [ "=1", (fnName, Sql, inf, [arg]) => '(' + arg.sqlSnippet(Sql) + ') IS NULL']
 , "notnull": [ "=1", (fnName, Sql, inf, [arg]) => '(' + arg.sqlSnippet(Sql) + ') IS NOT NULL']
 , "not"    : [ "=1", (fnName, Sql, inf, [arg]) => 'NOT (' + arg.sqlSnippet(Sql) + ')']
@@ -77,39 +109,4 @@ QFunctions = {
 , "desc":[ "=1",  (_, S, i, [a]) => a.sqlSnippet(S) + " DESC"]
 , "asc": [ "=1",  (_, S, i, [a]) => a.sqlSnippet(S) + " ASC" ]
 }
-
-function chooseFn (fnName, Sql, inf, args) {
-  return 'CASE ' + args[0].sqlSnippet(Sql) + args.slice(1).map((a, idx) => 'WHEN ' + idx + ' THEN ' + a.sqlSnippet(Sql)).join(' ') + ' END';
-}
-
-function castToFn(types) {
-  return (fnName, Sql, inf, [arg]) => 'CAST(' + arg.sqlSnippet(Sql) + ' AS ' + (types[Sql.type] || types._) + ')';
-}
-function castFn(fnName, Sql, inf, [arg]) {
-  inf = (inf||'').toLowerCase();
-
-  if (!inf || !castFn.typemap[inf]) {
-    throw "Invalid type to cast: " + inf;
-  }
-  else return castToFn(castFn.typemap[inf]).apply(this, arguments);
-}
-castFn.typemap = {
-   "int"     : {_: 'INTEGER', pg: 'BIGINT' , my: 'SIGNED' }
-  ,'time'    : {_: 'TIME'}
-  ,'date'    : {_: 'DATE'}
-  ,'datetime': {_: 'DATETIME'}
-  ,'num'     : {_: 'NUMERIC'}
-  ,'str'     : {_: 'CHAR', pg: 'VARCHAR' }
-  ,'money'   : {_: 'MONEY' }
-}
-
-function ifFn (fnName, Sql, inf, args) {
-  var i, cond = [], els = args.length % 2 ? ' ELSE ' + args[args.length - 1].sqlSnippet(Sql) : '';
-  
-  for (i = 0; i < args.length - 1; i += 2)
-    cond.push('WHEN ' + args[i].sqlSnippet(Sql) + ' THEN ' + args[i + 1].sqlSnippet(Sql));
-  return 'CASE ' + cond.join(' ') + els + ' END';
-}
-
-module.exports.QFunctions = QFunctions;
 

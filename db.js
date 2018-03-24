@@ -180,6 +180,7 @@ DbConnPg.types = {
   , 114  : [ 'json', 'str']
   , 1009 : [ '_regproc', 'str']
   , 705  : ['text', 'str']    /// TODO NOT SURE
+  , 1042 : ['bpchar', 'str']
 /*
   , 1000    : parseArray);
   , 1007    : parseArray);

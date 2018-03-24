@@ -28,11 +28,11 @@ Examples to connect to database:
 ## Query data
 
  - `?where=id=10` − query by id (there is shorter version: `?id:=10` (yes, with colon)
- - `?where=like(firstname,L)&L=J%25` − query by text matching. Notice how where expression is using variable L.
+ - `?where=like(firstname,$L)&L=J%25` − query by text matching. Notice how where expression is using variable L.
  - `?order=firstname` − for ordering data.
  - `?limit=10` − for limiting output.
  - `?select=firstname,lastname` − to select only some fields.
- - `?select=concat(firstname,spc,lastname)&spc=%20` − here SQL server does already more complicated work.
+ - `?select=concat(firstname,$spc,lastname)&spc=%20` − here SQL server does already more complicated work.
  - `?group=IDparty&select=IDparty,count(*)` − to group data; you may want also use `having` parameter.
 
 ## Limit database access

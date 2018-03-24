@@ -63,7 +63,7 @@ let QParser = P.createLanguage({
   , value : r => r.expr.trim(P.optWhitespace)
 
   // values
-  , expr  : r  => P.alt( r.not, r.op, r.par, r.cnt, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv )
+  , expr  : r  => P.alt( r.not, r.op, r.par, r.cnt, r.fn, r.var_, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv )
   , true_ : () => P.string("true" ).result(qTrue)
   , false_: () => P.string("false").result(qFalse)
   , null_ : () => P.string("null" ).result(qNull)
@@ -80,12 +80,12 @@ let QParser = P.createLanguage({
   , selectItem : r  => P.alt( P.seq(r.expr, P.regexp(/\s*@\s*/), r.token).map(([v,at,as]) => new QAs(v, new QName(as))), r.expr)
   , token      : r  => P.regexp(/[a-z_]([a-z0-9_])*/i)
   , tokenv     : r  => r.token.map(x => new QToken(x))
-  // , var_       : r  => P.string('$').then(r.token).map(x => new QVar(x))
+  , var_       : r  => P.string('$').then(r.token).map(x => new QVar(x))
   , commaSep   : () => P.regexp(/\s*,\s*/)
   , opStr      : () => P.alt
           ( P.alt( P.string("=="), P.string("!=="), P.string("!="), P.string("<="), P.string(">="), P.oneOf('+-*/%=<>|:')).trim(P.optWhitespace)
           , P.regexp(/\s+(and|or)\s+/i).map(o => o.toUpperCase()) )
-  , opExpr     : r  => P.alt( r.not, r.par, r.cnt, r.fn, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv) // everything like in expr but without 'op' to avoid recursion
+  , opExpr     : r  => P.alt( r.not, r.par, r.cnt, r.fn, r.var_, r.nr, r.true_, r.false_, r.null_, r.fld, r.tokenv) // everything like in expr but without 'op' to avoid recursion
 });
 
 QShortFn = {
@@ -116,18 +116,21 @@ process.nextTick( () => {
 
 function QValue() { }
 QValue.prototype = {
-  sqlSnippet: function () { throw new Error("sqlSnippet in QValue") }
-, travToken : function () { return this }
-, travField : function () { return this }
-, travFunc  : function () { return this }
+  sqlSnippet : function () { throw new Error("sqlSnippet in QValue") }
+, travVar    : function () { return this }
+, travToken  : function () { return this }
+, travField  : function () { return this }
+, travFunc   : function () { return this }
+, travVarA   : async function () { return this }
 , travTokenA : async function () { return this }
 , travFieldA : async function () { return this }
 , travFuncA  : async function () { return this }
 , isQValue   : true // is used to detect if it's type is parsed value
 , describe   : function () { throw new Error("describe in QValue") }
 , isSame     : function (el) { return this === el }
+, toNull     : () => qNull
 }
-protoQ = o => Object.assign({}, QValue.prototype, o); // I don't like it
+protoQ = o => Object.assign({}, QValue.prototype, o); // FIXME: I don't like it (use classes or Object.setPrototypeOf or smth)
 
 // QEmpty is just to write more convinitent code
 function QEmpty() {}
@@ -196,9 +199,11 @@ QField.prototype = protoQ({
 function QPar(v) { this.v = v }
 QPar.prototype = protoQ({
    sqlSnippet : function (Sql) { return '(' + this.v.sqlSnippet(Sql) + ')' }
+,  travVar    : function (fn) { return new QPar(this.v.travVar(fn)); }
 ,  travToken  : function (fn) { return new QPar(this.v.travToken(fn)); }
 ,  travField  : function (fn) { return new QPar(this.v.travField(fn)); }
 ,  travFunc   : function (fn) { return new QPar(this.v.travFunc (fn)); }
+,  travVarA    : async function (fn) { return new QPar(await this.v.travVarA(fn)); }
 ,  travTokenA  : async function (fn) { return new QPar(await this.v.travTokenA(fn)); }
 ,  travFieldA  : async function (fn) { return new QPar(await this.v.travFieldA(fn)); }
 ,  travFuncA   : async function (fn) { return new QPar(await this.v.travFuncA (fn)); }
@@ -213,9 +218,11 @@ QFn.prototype = protoQ({
       let [argCount, fn] = QFunctions[this.name];
       return fn(this.name, Sql, this.inf, this.args);
   }
+, travVar   : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travVar(fn))); }
 , travToken : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travToken(fn))); }
 , travField : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travField(fn))); }
 , travFunc  : function (fn) { let fn_ = fn(this); return fn_ === this ? new QFn(this.name, this.info, this.args.map(a => a.travFunc(fn))) : fn_; }
+, travVarA  : async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travVarA(fn)))); }
 , travTokenA: async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travTokenA(fn)))); }
 , travFieldA: async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travFieldA(fn)))); }
 , travFuncA : async function (fn) { let fn_ = await fn(this); return fn_ === this ? new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travFuncA(fn)))) : fn_; }
@@ -229,9 +236,11 @@ QFn.prototype = protoQ({
 function QAs(v, as) { this.v = v; this.as = as; }
 QAs.prototype = protoQ({
    sqlSnippet : function (Sql) { return this.v.sqlSnippet(Sql) + (this.as ? ' AS ' + this.as.sqlSnippet(Sql) : ''); }
+,  travVar    : function (fn) { return new QAs(this.v.travVar  (fn), this.as); }
 ,  travToken  : function (fn) { return new QAs(this.v.travToken(fn), this.as); }
 ,  travField  : function (fn) { return new QAs(this.v.travField(fn), this.as); }
 ,  travFunc   : function (fn) { return new QAs(this.v.travFunc (fn), this.as);  }
+,  travVarA   : async function (fn) { return new QAs(await this.v.travVarA  (fn), this.as); }
 ,  travTokenA : async function (fn) { return new QAs(await this.v.travTokenA(fn), this.as); }
 ,  travFieldA : async function (fn) { return new QAs(await this.v.travFieldA(fn), this.as); }
 ,  travFuncA  : async function (fn) { return new QAs(await this.v.travFuncA (fn), this.as);  }
@@ -242,9 +251,11 @@ QAs.prototype = protoQ({
 function QLimit(limit, offset) { this.limit = limit || qEmpty; this.offset = offset || qEmpty; }
 QLimit.prototype = protoQ({
    sqlSnippet : function (Sql) { return this.limit.sqlSnippet(Sql) + (this.offset && !this.offset.isEmpty ? ' OFFSET ' + this.offset.sqlSnippet(Sql) : '') }
+,  travVar    : function (fn) { return new QLimit(this.limit.travVar  (fn), this.offset.travVar  (fn)); }
 ,  travToken  : function (fn) { return new QLimit(this.limit.travToken(fn), this.offset.travToken(fn)); }
 ,  travField  : function (fn) { return new QLimit(this.limit.travField(fn), this.offset.travField(fn)); }
 ,  travFunc   : function (fn) { return new QLimit(this.limit.travFunc (fn), this.offset.travFunc (fn));  }
+,  travVarA   : async function (fn) { return new QLimit(await this.limit.travVarA  (fn), await this.offset.travVarA  (fn)); }
 ,  travTokenA : async function (fn) { return new QLimit(await this.limit.travTokenA(fn), await this.offset.travTokenA(fn)); }
 ,  travFieldA : async function (fn) { return new QLimit(await this.limit.travFieldA(fn), await this.offset.travFieldA(fn)); }
 ,  travFuncA  : async function (fn) { return new QLimit(await this.limit.travFuncA (fn), await this.offset.travFuncA (fn));  }
@@ -264,9 +275,11 @@ QOp.prototype = protoQ({
     var ls = this.ls.map(([op, val]) => [ QOp.opMap[op] || op, val ]);
     return this.fst.sqlSnippet(Sql) + ls.map(([op, val]) => ' ' + op + ' ' + val.sqlSnippet(Sql)).join('')
   }
+, travVar  : function (fn) { return new QOp(this.fst.travVar  (fn), this.ls.map(([op, val]) => [op, val.travVar  (fn)])) }
 , travToken: function (fn) { return new QOp(this.fst.travToken(fn), this.ls.map(([op, val]) => [op, val.travToken(fn)])) }
 , travField: function (fn) { return new QOp(this.fst.travField(fn), this.ls.map(([op, val]) => [op, val.travField(fn)])) }
 , travFunc : function (fn) { return new QOp(this.fst.travFunc (fn), this.ls.map(([op, val]) => [op, val.travFunc (fn)])) }
+, travVarA : async function (fn) { return new QOp(await this.fst.travVarA   (fn), await Promise.all(this.ls.map(([op, val]) => val.travVarA  (fn).then(v => [op, v]) ))) }
 , travTokenA: async function (fn) { return new QOp(await this.fst.travTokenA(fn), await Promise.all(this.ls.map(([op, val]) => val.travTokenA(fn).then(v => [op, v]) ))) }
 , travFieldA: async function (fn) { return new QOp(await this.fst.travFieldA(fn), await Promise.all(this.ls.map(([op, val]) => val.travFieldA(fn).then(v => [op, v]) ))) }
 , travFuncA : async function (fn) { return new QOp(await this.fst.travFuncA (fn), await Promise.all(this.ls.map(([op, val]) => val.travFuncA (fn).then(v => [op, v]) ))) }
@@ -278,9 +291,11 @@ QOp.prototype = protoQ({
 function QList(ls) { this.ls = ls; }
 QList.prototype = protoQ({
    sqlSnippet : function (Sql) { return this.ls.map(el => el.sqlSnippet(Sql)).join(', ') }
+,  travVar    : function (fn) { return new QList(this.ls.map(i => i.travVar  (fn))) }
 ,  travToken  : function (fn) { return new QList(this.ls.map(i => i.travToken(fn))) }
 ,  travField  : function (fn) { return new QList(this.ls.map(i => i.travField(fn))) }
 ,  travFunc   : function (fn) { return new QList(this.ls.map(i => i.travFunc (fn))) }
+,  travVarA   : async function (fn) { return new QList(await Promise.all(this.ls.map(i => i.travVarA  (fn)))) }
 ,  travTokenA : async function (fn) { return new QList(await Promise.all(this.ls.map(i => i.travTokenA(fn)))) }
 ,  travFieldA : async function (fn) { return new QList(await Promise.all(this.ls.map(i => i.travFieldA(fn)))) }
 ,  travFuncA  : async function (fn) { return new QList(await Promise.all(this.ls.map(i => i.travFuncA (fn)))) }
@@ -294,9 +309,11 @@ QList.prototype = protoQ({
 function QSet(table, sets = {}) { this.table, this.sets = sets; }
 QSet.prototype = protoQ({
    sqlSnippet : function (Sql) { return Object.map(this.sets, (f, v) => new QField(this.table, f).sqlSnippet(Sql) + ' = ' + v.sqlSnippet(Sql)).join(', ') }
+,  travVar    : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travVar  (fn))); }
 ,  travToken  : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travToken(fn))); }
 ,  travField  : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travField(fn))); }
 ,  travFunc   : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travFunc(fn))); }
+,  travVarA   : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travVarA  (fn))); }
 ,  travTokenA : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travTokenA(fn))); }
 ,  travFieldA : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travFieldA(fn))); }
 ,  travFuncA  : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travFuncA(fn))); }
@@ -312,10 +329,9 @@ QSet.prototype = protoQ({
 ,  isSame     : function (el) { return this === el || (this.table === el.table && typeof el.sets === 'object'
                     && Object.keys(this.sets).length === Object.keys(el.sets).length && Object.keys(el.sets).every((k,i) => this.sets[k].isSame(el.sets[k])) ) }
 });
-QSet.fromObject     = function (table, o) { return new QSet(table, Object.onValues(o, jsToQVal)) }
-QSet.fromObjectExpr = function (table, o) { return new QSet(table, Object.onValues(o, v => typeof v === 'string' ? QParser.value.tryParse(v) : jsToQVal(v))) }
+QSet.fromObject     = (table, o) => new QSet(table, Object.onValues(o, jsToQVal));
+QSet.fromObjectExpr = (table, o) => new QSet(table, Object.onValues(o, v => typeof v === 'string' ? QParser.value.tryParse(v) : jsToQVal(v)));
 
-// QToken 
 function QToken(token) { this.token = token; if (typeof token !== 'string') throw new Error('BUG: token is not string'); }
 QToken.prototype = protoQ({
    sqlSnippet : () => { throw "BUG: QToken must always be converted to string, variable or field (value: " + this.token + ")" }
@@ -323,7 +339,6 @@ QToken.prototype = protoQ({
 ,  travTokenA: async function (fn) { return await fn(this); }
 ,  toString: function (s) { return new QString(s ? s.replace(/%s/g, this.token) : this.token) }
 ,  toField:  function (table) { return new QField(table, this.token) }
-,  toNull :  () => qNull
 ,  toAs: function (as) { return new QAs(this, new QName(as)); }
 ,  describe: function () { return { "token": this.token } }
 ,  isSame: function (el) { return this === el || (el.token === this.token) }
@@ -335,6 +350,8 @@ QVar.prototype = protoQ({
     sqlSnippet: function (Sql) { return new QString(this.v).sqlSnippet(Sql) }
   , describe  : function () { return { "var": this.v } }
   , isSame    : function (el) { return this === el || (el.v === this.v) }
+  , travVar   :       function (fn) { return       fn(this); }
+  , travVarA  : async function (fn) { return await fn(this); }
 });
 
 // QName is for escaped as `select ... as "name"`
@@ -356,9 +373,11 @@ QTempl.prototype = protoQ({
       return vals[parseInt(arg)].sqlSnippet(Sql);
     })
   }
+, travVar  : function (fn) { return new QTempl(this.name,this.templ,this.values.map(v => v.travVar  (fn))); }
 , travToken: function (fn) { return new QTempl(this.name,this.templ,this.values.map(v => v.travToken(fn))); }
 , travField: function (fn) { return new QTempl(this.name,this.templ,this.values.map(v => v.travField(fn))); }
 , travFunc : function (fn) { return new QTempl(this.name,this.templ,this.values.map(v => v.travFunc (fn))); }
+, travVarA  : async function (fn) { return new QTempl(this.name,this.templ,await Promise.all(this.values.map(v => v.travVarA  (fn)))); }
 , travTokenA: async function (fn) { return new QTempl(this.name,this.templ,await Promise.all(this.values.map(v => v.travTokenA(fn)))); }
 , travFieldA: async function (fn) { return new QTempl(this.name,this.templ,await Promise.all(this.values.map(v => v.travFieldA(fn)))); }
 , travFuncA : async function (fn) { return new QTempl(this.name,this.templ,await Promise.all(this.values.map(v => v.travFuncA (fn)))); }
@@ -391,9 +410,11 @@ QFrom.prototype = protoQ({
   }
   , tables: function () { return [ { name: this.table, as: this.as || this.table} ].concat(this.joins.map(j => { return {name: j.table, as: j.as ? j.as.v : j.name}})) }
   , addJoins: function (join_ls) { this.joins = this.joins.concat(join_ls) }
+  , travVar  : function (fn) { return new QFrom(this.table,this.as,this.joins.map(j => j.travVar  (fn))); }
   , travToken: function (fn) { return new QFrom(this.table,this.as,this.joins.map(j => j.travToken(fn))); }
   , travField: function (fn) { return new QFrom(this.table,this.as,this.joins.map(j => j.travField(fn))); }
   , travFunc : function (fn) { return new QFrom(this.table,this.as,this.joins.map(j => j.travFunc (fn))); }
+  , travVarA  : async function (fn) { return new QFrom(this.table,this.as,await Promise.all(this.joins.map(j => j.travVarA  (fn)))); }
   , travTokenA: async function (fn) { return new QFrom(this.table,this.as,await Promise.all(this.joins.map(j => j.travTokenA(fn)))); }
   , travFieldA: async function (fn) { return new QFrom(this.table,this.as,await Promise.all(this.joins.map(j => j.travFieldA(fn)))); }
   , travFuncA : async function (fn) { return new QFrom(this.table,this.as,await Promise.all(this.joins.map(j => j.travFuncA (fn)))); }
@@ -417,9 +438,11 @@ QJoin.prototype = protoQ({
     else 
       return this.type.toUpperCase() + ' JOIN ' + T + prefIf(' AS ', this.as.sqlSnippet(Sql)) + ' ON ' + this.on.sqlSnippet(Sql);
   }
+, travVar  : function (fn) { return new QJoin(this.table,this.type,this.as, this.on.travVar  (fn)); }
 , travToken: function (fn) { return new QJoin(this.table,this.type,this.as, this.on.travToken(fn)); }
 , travField: function (fn) { return new QJoin(this.table,this.type,this.as, this.on.travField(fn)); }
 , travFunc : function (fn) { return new QJoin(this.table,this.type,this.as, this.on.travFunc (fn)); }
+, travVarA  : async function (fn) { return new QJoin(this.table,this.type,this.as, await this.on.travVarA  (fn)); }
 , travTokenA: async function (fn) { return new QJoin(this.table,this.type,this.as, await this.on.travTokenA(fn)); }
 , travFieldA: async function (fn) { return new QJoin(this.table,this.type,this.as, await this.on.travFieldA(fn)); }
 , travFuncA : async function (fn) { return new QJoin(this.table,this.type,this.as, await this.on.travFuncA (fn)); }
@@ -467,12 +490,12 @@ QSelect.prototype = protoQ({
   sqlSnippet: function (Sql) {
     if (!this.select) throw new Error('query bug: select must be defined');
     let x = 'SELECT ' + (this.opts.distinct ? 'DISTINCT ' : '') +  (this.select).sqlSnippet(Sql) +
-      prefIf(' FROM '    , (this.from   || new QEmpty() ).sqlSnippet(Sql)) + // can be missing in INSERT INTO ... SELECT ...
-      prefIf(' WHERE '   , (this.where  || new QEmpty() ).sqlSnippet(Sql)) +
-      prefIf(' GROUP BY ', (this.group  || new QEmpty() ).sqlSnippet(Sql)) +
-      prefIf(' HAVING '  , (this.having || new QEmpty() ).sqlSnippet(Sql)) +
-      prefIf(' ORDER BY ', (this.order  || new QEmpty() ).sqlSnippet(Sql)) +
-      prefIf(' LIMIT '   , (this.limit  || new QEmpty() ).sqlSnippet(Sql));
+      prefIf(' FROM '    , (this.from   || qEmpty ).sqlSnippet(Sql)) + // can be missing in INSERT INTO ... SELECT ...
+      prefIf(' WHERE '   , (this.where  || qEmpty ).sqlSnippet(Sql)) +
+      prefIf(' GROUP BY ', (this.group  || qEmpty ).sqlSnippet(Sql)) +
+      prefIf(' HAVING '  , (this.having || qEmpty ).sqlSnippet(Sql)) +
+      prefIf(' ORDER BY ', (this.order  || qEmpty ).sqlSnippet(Sql)) +
+      prefIf(' LIMIT '   , (this.limit  || qEmpty ).sqlSnippet(Sql));
     return x;
   },
   describe: function () {
@@ -498,6 +521,17 @@ QSelect.prototype = protoQ({
     ,!this.having  ? null : this.having.travToken(fn)
     ,!this.order   ? null : this.order .travToken(fn)
     ,!this.limit   ? null : this.limit .travToken(fn)
+    , this.opts);
+  },
+  travVar (fn) {
+    return new QSelect
+    (!this.select  ? null : this.select.travVar(fn)
+    ,!this.from    ? null : this.from  .travVar(fn)
+    ,!this.where   ? null : this.where .travVar(fn)
+    ,!this.group   ? null : this.group .travVar(fn)
+    ,!this.having  ? null : this.having.travVar(fn)
+    ,!this.order   ? null : this.order .travVar(fn)
+    ,!this.limit   ? null : this.limit .travVar(fn)
     , this.opts);
   },
   travField (fn) {
@@ -531,6 +565,17 @@ QSelect.prototype = protoQ({
     ,!this.having  ? null : await this.having.travTokenA(fn)
     ,!this.order   ? null : await this.order .travTokenA(fn)
     ,!this.limit   ? null : await this.limit .travTokenA(fn)
+    , this.opts);
+  },
+  async travVarA (fn) {
+    return new QSelect
+    (!this.select  ? null : await this.select.travVarA(fn)
+    ,!this.from    ? null : await this.from  .travVarA(fn)
+    ,!this.where   ? null : await this.where .travVarA(fn)
+    ,!this.group   ? null : await this.group .travVarA(fn)
+    ,!this.having  ? null : await this.having.travVarA(fn)
+    ,!this.order   ? null : await this.order .travVarA(fn)
+    ,!this.limit   ? null : await this.limit .travVarA(fn)
     , this.opts);
   },
   async travFieldA (fn) {
@@ -607,7 +652,7 @@ QSelect.tearUp = function (table, as = null, inputVars = {}) {
     { from: drv.from ||
          new QFrom(table, as,
                 D.map(v => v.match(jexp)).filter(Boolean)
-                 .map(([key,typ,table,_x,as]) => new QJoin(table, typ || 'inner', as ? new QName(as) : new QEmpty(), onStr(pval)(drv[key]) )))
+                 .map(([key,typ,table,_x,as]) => new QJoin(table, typ || 'inner', as ? new QName(as) : qEmpty, onStr(pval)(drv[key]) )))
     }
     , !drv.select ? {} : { select : onStr(psel)(drv.select) }
     , !w.length   ? {} : { where  : and(w) }
@@ -633,9 +678,11 @@ QInsert.prototype = protoQ({
     return 'INSERT INTO ' + new QName(this.table).sqlSnippet(Sql) + ' (' + this.set.keys().sqlSnippet(Sql) + ') VALUES (' + this.set.values().sqlSnippet(Sql) + ')';
   }
   , sqlCommands: function* (Sql) { yield this.sqlSnippet(Sql) }
+  , travVar  : function (fn) { return new QInsert(this.table, this.set.travVar  (fn)); }
   , travToken: function (fn) { return new QInsert(this.table, this.set.travToken(fn)); }
   , travField: function (fn) { return new QInsert(this.table, this.set.travField(fn)); }
   , travFunc : function (fn) { return new QInsert(this.table, this.set.travFunc (fn)); }
+  , travVarA  : async function (fn) { return new QInsert(this.table, await this.set.travVarA  (fn)); }
   , travTokenA: async function (fn) { return new QInsert(this.table, await this.set.travTokenA(fn)); }
   , travFieldA: async function (fn) { return new QInsert(this.table, await this.set.travFieldA(fn)); }
   , travFuncA : async function (fn) { return new QInsert(this.table, await this.set.travFuncA (fn)); }
@@ -651,9 +698,11 @@ function QUpdate (table, set, where) {
 QUpdate.prototype = protoQ({
     sqlSnippet(Sql) { return 'UPDATE ' + new QName(this.table).sqlSnippet(Sql) + ' SET ' + this.set.sqlSnippet(Sql) + ' WHERE ' + this.where.sqlSnippet(Sql) }
   , sqlCommands: function* (Sql) { yield this.sqlSnippet(Sql); }
+  , travVar  : function (fn) { return new QUpdate(this.table, this.set.travVar  (fn), this.where.travVar  (fn)); }
   , travToken: function (fn) { return new QUpdate(this.table, this.set.travToken(fn), this.where.travToken(fn)); }
   , travField: function (fn) { return new QUpdate(this.table, this.set.travField(fn), this.where.travField(fn)); }
   , travFunc : function (fn) { return new QUpdate(this.table, this.set.travFunc (fn), this.where.travFunc (fn)); }
+  , travVarA  : async function (fn) { return new QUpdate(this.table, await this.set.travTokenA(fn), await this.where.travVarA  (fn)); }
   , travTokenA: async function (fn) { return new QUpdate(this.table, await this.set.travTokenA(fn), await this.where.travTokenA(fn)); }
   , travFieldA: async function (fn) { return new QUpdate(this.table, await this.set.travFieldA(fn), await this.where.travFieldA(fn)); }
   , travFuncA : async function (fn) { return new QUpdate(this.table, await this.set.travFuncA (fn), await this.where.travFuncA (fn)); }
@@ -667,9 +716,11 @@ function QDelete (table, where) { // :: string, QValue
 QDelete.prototype = protoQ({
     sqlSnippet(Sql) { return 'DELETE FROM ' + new QName(this.table).sqlSnippet(Sql) + ' WHERE ' + this.where.sqlSnippet(Sql); }
   , sqlCommands: function* (Sql) { yield this.sqlSnippet(Sql); }
+  , travVar  : function (fn) { return new QDelete(this.table, this.where.travVar  (fn)); }
   , travToken: function (fn) { return new QDelete(this.table, this.where.travToken(fn)); }
   , travField: function (fn) { return new QDelete(this.table, this.where.travField(fn)); }
   , travFunc : function (fn) { return new QDelete(this.table, this.where.travFunc (fn)); }
+  , travVarA  : async function (fn) { return new QDelete(this.table, await this.where.travVarA  (fn)); }
   , travTokenA: async function (fn) { return new QDelete(this.table, await this.where.travTokenA(fn)); }
   , travFieldA: async function (fn) { return new QDelete(this.table, await this.where.travFieldA(fn)); }
   , travFuncA : async function (fn) { return new QDelete(this.table, await this.where.travFuncA (fn)); }
@@ -688,9 +739,11 @@ QReplace.prototype = protoQ({
         yield 'INSERT INTO ' + new QName(this.table).sqlSnippet(Sql) + ' (' + this.set.keys().sqlSnippet(Sql) + ') VALUES (' + this.set.values().sqlSnippet(Sql) + ')';
       else yield null;
   }
+  , travVar  : function (fn) { return new QReplace(this.table, this.set.travVar  (fn), this.where.travVar  (fn)); }
   , travToken: function (fn) { return new QReplace(this.table, this.set.travToken(fn), this.where.travToken(fn)); }
   , travField: function (fn) { return new QReplace(this.table, this.set.travField(fn), this.where.travField(fn)); }
   , travFunc : function (fn) { return new QReplace(this.table, this.set.travFunc (fn), this.where.travFunc(fn)); }
+  , travVarA  : async function (fn) { return new QReplace(this.table, await this.set.travVarA  (fn), await this.where.travVarA  (fn)); }
   , travTokenA: async function (fn) { return new QReplace(this.table, await this.set.travTokenA(fn), await this.where.travTokenA(fn)); }
   , travFieldA: async function (fn) { return new QReplace(this.table, await this.set.travFieldA(fn), await this.where.travFieldA(fn)); }
   , travFuncA : async function (fn) { return new QReplace(this.table, await this.set.travFuncA (fn), await this.where.travFuncA (fn)); }
@@ -725,7 +778,7 @@ async function fillUp(q, vars, custFn, meta, evArg) {
 }
 
 class WriteRule {
-  constructor (inf) {
+  constructor (inf, conf = {}) {
     Object.assign(this, inf);
     if (!inf.table ) throw "Write-rule must have `table` (" + JSON.stringify(inf) + ')';
     if (!inf.on    ) throw "Write-rule must have `on` (" + JSON.stringify(inf) + ')';
@@ -749,6 +802,9 @@ class WriteRule {
       if (m = R.match(/autonum +(\w+)/))    this.retWhere = new QTempl('returning', '$0 = last_insert_id()', [ new QField(this.table, m[1]) ]);
       else this.retWhere = QParser.value.tryParse(this.returning);
     }
+    
+    this.varsWithout$  = conf.hasOwnProperty('varsWithout$' ) ? !!conf.varsWithout$  : false;
+    this.inlineStrings = conf.hasOwnProperty('inlineStrings') ? !!conf.inlineStrings : false;
   }
   async match(inp, schema, vars = {}, custFn = {}, meta, evArg = {}) {
     if (!this.tester) this.tester = await testSql;
@@ -757,15 +813,22 @@ class WriteRule {
     vars = Object.assign({}, vars, this.vars);
 
     let newRow = Object.onValues(inp, v => jsToQVal(v));
-    let travNew = f => f.table === 'new' ? newRow[f.field] || new QNull() : f;
+    let travNew = f => f.table === 'new' ? newRow[f.field] || qNull : f;
+
+    let varFn = V => {
+      if (vars[V.v]) return jsToQVal(vars[V.V]);
+      else throw "Variable missing: " + V.v;
+    }
 
     let tokenFn = T => {
       if (allFields.has(T.token)) return T.toField(this.table);
-      if (typeof vars[T.token] !== 'undefined') return jsToQVal(vars[T.token]);
-      else return T.toString();
+      if (this.varsWithout$ && typeof vars[T.token] !== 'undefined') return jsToQVal(vars[T.token]);
+      else if (this.inlineStrings) return T.toString();
+      else throw "Unknown text in expression: " + T.token;
     }
-    let fill = async q => (await fillUp(q, vars, custFn, meta, evArg)).travField(travNew).travToken(tokenFn);
-    let isMatch = (await this.tester.all('SELECT ' + new QAs(this.on.travField(travNew).travToken(tokenFn), new QName('t')).sqlSnippet(SqlLt))) [0].t;
+
+    let fill = async q => (await fillUp(q, vars, custFn, meta, evArg)).travField(travNew).travVar(varFn).travToken(tokenFn);
+    let isMatch = (await this.tester.all('SELECT ' + new QAs(this.on.travField(travNew).travVar(varFn).travToken(tokenFn), new QName('t')).sqlSnippet(SqlLt))) [0].t;
     if (!isMatch) return null;
     else switch(this.action) {
       case 'delete' : return await fill(new QDelete (this.table, this.where)); break;
@@ -782,10 +845,10 @@ class WriteRule {
 let prefIf = (pref, txt)  => txt ? pref + txt : '';
 
 function and(ls) {
-  if (!ls) return new QEmpty();
+  if (!ls) return qEmpty;
   ls = ls.filter(x => !x.isEmpty);
-  if (ls.length === 0) return new QEmpty();  else
-  if (ls.length === 1) return ls[0];         else
+  if (ls.length === 0) return qEmpty;
+  if (ls.length === 1) return ls[0];
   return new QOp(new QPar(ls[0]), ls.slice(1).map(w => [ 'AND', new QPar(w)]));
 }
 
@@ -942,23 +1005,15 @@ custFnReplacer = function (vars, arg) {
 }
 
 function jsToQVal(v) {
-  if (v === null) return new QNull();
-  if (v === true) return new QBool(true);
-  if (v === false) return new QBool(false);
+  if (v === null) return qNull;
+  if (v === true) return qTrue;
+  if (v === false) return qFalse;
   if (typeof v === 'string') return new QString(v);
   if (typeof v === 'number') return new QFloat(v);
   if (typeof v === 'object' && v.isQValue) return v;
-  if (typeof v === 'undefined') return new QNull(); // oh, well...
+  if (typeof v === 'undefined') return qNull; // oh, well...
   throw "Can't convert value to QVal (" + JSON.stringify(v) + ")";
 }
 
-module.exports.Select  = QSelect;
-module.exports.WriteRule = WriteRule;
-module.exports.jsToQVal = jsToQVal;
-module.exports.expression = s => QParser.value.tryParse(s)
-/*
-module.exports.SqlPg   = SqlPg;
-module.exports.SqlLt   = SqlLt;
-module.exports.SqlMy   = SqlMy;
-*/
+module.exports = { WriteRule, jsToQVal, Select: QSelect, expression: s => QParser.value.tryParse(s) }
 
