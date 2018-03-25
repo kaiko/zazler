@@ -269,17 +269,17 @@ DbConnMy.prototype = {
   query: function (q) {
     // console.log('Q: ' + q);
     return new Promise((return_, onErr) => this.pool.query(q, (err, res, fields) => {
-      if (err) throw err;
+      if (err) { onErr( err); return; }
       let t = fields.map(f => DbConnMy.types[f.type] || ['str','str']);
       return_({ data: res, cols: fields.map(f => f.name), types: t.map(t => t[1]), rawTypes: t.map(t => t[0]) })
     }
     ));
   },
-  transaction: function () { return new Promise(return_ => {
+  transaction: function () { return new Promise((return_, throw_) => {
     this.pool.getConnection((err, client) =>  {
-      if (err) throw err;
+      if (err) { throw_(err); return; }
       client.query('begin', err => {
-        if (err) throw err;
+        if (err) { throw_(err); return; }
         return_({
           commit: () => { client.query('commit', () => client.release() ) }
         , query: sql => {
@@ -307,7 +307,7 @@ DbConnMy.prototype = {
   },
   learn: async function () {
     let R = this._schema = [];
-    let Q = q => new Promise(ret => this.pool.query(q, (e, r, f) => { if (e) throw e; ret([r,f]) }))
+    let Q = q => new Promise((ret, problem) => this.pool.query(q, (e, r, f) => { if (e) problem(e); else ret([r,f]) }))
     let [tables,tf] = await Q("SHOW TABLES");
     tables = tables.map(t => t[tf[0].name]);
     for (let i = 0; i < tables.length; i++) {

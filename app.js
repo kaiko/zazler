@@ -83,10 +83,7 @@ class App {
     if (conf) this.setConf(conf);
 
     this.block = new Promise( ub => this.unblock = ub ) ;
-    process.nextTick( async () => {
-      await this.schema();
-      this.unblock();
-    })
+    this.unblock();
   }
 
   evSql(e)   { this.events.onSql.forEach(fn => fn(e)); }
@@ -787,7 +784,11 @@ async function inputRows(dirs, fmt, body) {
 }
 
 
-module.exports = (con,conf) => new App(con, conf);
+module.exports = async (con,conf) => {
+  let a = new App(con, conf);
+  await a.updateSchema();
+  return a;
+}
 
 // used to throw new NeedAuth()
 function NeedAuth() { }
