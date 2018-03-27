@@ -8,7 +8,7 @@ Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way
 Here is "hello world" example (assume there is sqlite database):
 
     let srv = require("express")();
-    let api = require("zazler")("file:///tmp/my.db", { read: "*" });
+    let api = await require("zazler")("file:///tmp/my.db", { read: "*" });
     srv.use('/my/', api.expressRequest);
     srv.listen(80);
 
@@ -38,7 +38,7 @@ Examples to connect to database:
 ## Limit database access
 
     let DBApi = require('zazler');
-    dbApi = DBApi("mysql://host/db", {
+    dbApi = await DBApi("mysql://host/db", {
 
        // table and column level access limits
        // allows to query all columns from table1

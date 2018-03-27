@@ -536,7 +536,7 @@ class App {
   }
 
   templNewDb() {
-    let conf = { read : '*', templates: this.tmplDirs, parsers: this.prsDirs };
+    let conf = { read : '*', templates: this.tmplDirs, parsers: this.prsDirs, varsWithout$: this.varsWithout$, inlineStrings: this.inlineStrings };
     let a = new App({type: 'lt'}, conf);
     a.engines = this.engines;
     return Object.create({}, {
@@ -546,7 +546,7 @@ class App {
         let db = await a.conn.transaction();
         await db.exec('CREATE TABLE ' + name + ' (' + names.join(', ') + ')'); // TODO: escaping and sutff
         let ins = 'INSERT INTO ' + name + '(';
-        for (let r = 0; r < rows.length; r.length)
+        for (let r = 0; r < rows.length; r++)
           await db.exec(ins + Object.keys(rows[r]).join(',') + ') VALUES (' + Object.keys(rows[r]).map(k=>jsToQVal(rows[r][k]).sqlSnippet(SqlLt)).join(',') + ')');
         await db.commit();
         await a.updateSchema()
