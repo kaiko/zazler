@@ -98,7 +98,7 @@ class App {
     this.read  = new AccessRule(conf.read);
     this.write = new AccessRule(conf.write);
     this.hide  = new AccessRule(conf.hide);
-    this.prot  = new AccessRule(conf.prot);
+    this.prot  = new AccessRule(conf.prot || conf.protect);
 
     this.wrules = (conf["write-rules"] || []).map(r => new WriteRule(r));
 
