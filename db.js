@@ -151,6 +151,7 @@ DbConnPg.prototype = {
       tables.rows.map( t => Object.assign({}, b, { _: 'table', name: t.name, comment: t.comment })).concat (
       fields.rows.map( f => Object.assign({}, b, { _: 'field', name: f.attname, table: f.relname, comment: f.comment, autonum: false, type: f.type, genType: tmap.get(f.type) || 'str' })))
     // constr.rows.map( r => { _: '
+    client.release();
   }
 };
 // FIXME: real types are not checked and written quite randomly

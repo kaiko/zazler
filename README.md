@@ -7,10 +7,13 @@ Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way
 
 Here is "hello world" example (assume there is sqlite database):
 
-    let srv = require("express")();
-    let api = await require("zazler")("file:///tmp/my.db", { read: "*" });
-    srv.use('/my/', api.expressRequest);
-    srv.listen(80);
+```javascript
+let srv = require('express')();
+require('zazler')("file:///tmp/my.db", { read: '*' } )
+.then(api => {
+  srv.use('/my/', api.expressRequest);
+  srv.listen(80);
+});
 
 It allows to query like this:
 

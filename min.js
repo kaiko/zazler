@@ -1,5 +1,6 @@
 
 let srv = require('express')();
-let api = require('zazler') ("file:///tmp/my.db", { read: '*' } );
-srv.use('/foo/', api.expressRequest);
-srv.listen(3000);
+require('zazler')("file:///tmp/my.db", { read: '*' } ).then(api => {
+  srv.use('/foo/', api.expressRequest);
+  srv.listen(3000);
+});
