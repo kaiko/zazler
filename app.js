@@ -250,7 +250,8 @@ class App {
       , query: async function (qTable, qVars) { // FIXME: this is double in format
           let [qt,f] = breakOn(qTable, '.');
           let [t,as] = breakOn(qt, '@');
-          let sqlRes = await me.runSelect(t, as, qVars, R.meta, arg);
+          let sch    = await me.schema();
+          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch);
           sqlRes.format = async (qFmt, eVars = {}) => {
               let R;
               try {
