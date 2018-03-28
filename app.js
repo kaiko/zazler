@@ -82,8 +82,7 @@ class App {
 
     if (conf) this.setConf(conf);
 
-    this.block = new Promise( ub => this.unblock = ub ) ;
-    this.unblock();
+    this.block = Promise.resolve(true);
   }
 
   evSql(e)   { this.events.onSql.forEach(fn => fn(e)); }
