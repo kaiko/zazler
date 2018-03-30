@@ -229,6 +229,7 @@ class App {
       }
     }
 
+    let sch = await this.schema();
     let _auth = null, _cookie = null, _req = null;
     R.meta = {
       cookie: async () => { if (!_cookie) _cookie = Object.onValues(req.cookies||{}, jsToQVal); return _cookie; }
@@ -250,7 +251,7 @@ class App {
       , query: async function (qTable, qVars) { // FIXME: this is double in format
           let [qt,f] = breakOn(qTable, '.');
           let [t,as] = breakOn(qt, '@');
-          let sqlRes = await me.runSelect(t, as, qVars, R.meta, arg);
+          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, arg);
           sqlRes.format = async (qFmt, eVars = {}) => {
               let R;
               try {
@@ -301,8 +302,8 @@ class App {
     let fmtResult = {}, sqlResult;
     try {
         sqlResult = R.req.isPost
-           ? await this.runPost  (R.table, R.vars, R.req, R.meta, await this.schema(), R.post, R, R.files)
-           : await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), {...R.req, ...{ cookie: req.cookies} } );
+           ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, R.post, R, R.files)
+           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, {...R.req, ...{ cookie: req.cookies} } );
         fmtResult = await this.format(sqlResult, R.format, R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
     } catch (someErr) {
       if (someErr instanceof NeedAuth) {
@@ -320,8 +321,8 @@ class App {
         let [t,f] = breakOn(auth.content, '.');
         let m  = Object.assing({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, auth.contentVars||{}) });
         try {
-          sqlResult = await this.runQuery(t, Object.assign({}, vars, this.auth.contentVars || {}), R.meta, await this.schema());
-          fmtResult = await this.format(sqlResult, f, t, vars, m, R.meta, await this.schema());
+          sqlResult = await this.runQuery(t, Object.assign({}, vars, this.auth.contentVars || {}), R.meta, sch);
+          fmtResult = await this.format(sqlResult, f, t, vars, m, R.meta, sch);
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw "auth content wanted to auth again ... look out ;)" }
           this.evError(someE);
