@@ -1,9 +1,9 @@
 
-I've always been passinate about making development process as fast as possible.
+I've always been passionate about making development process as fast as possible.
 
-This platform allows you to query SQL data at frontend so easily as possible without writing all tedious SQL queries one by one on server side.
+This platform allows you to query SQL data at frontend so easily as possible without writing all these tedious SQL queries one by one on server side.
 
-Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convienent way to see result in html.
+Works with MySQL, PostgreSQL and SQLite. Provides JSON output and convenient way to see results in html.
 
 Here is "hello world" example (assume there is sqlite database):
 
@@ -14,6 +14,7 @@ require('zazler')("file:///tmp/my.db", { read: '*' } )
   srv.use('/my/', api.expressRequest);
   srv.listen(80);
 });
+```
 
 It allows to query like this:
 

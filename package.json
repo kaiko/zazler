@@ -1,8 +1,9 @@
 {
   "name": "zazler",
-  "version": "1.0.13",
+  "version": "1.0.16",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com> (http://www.zazler.com/)",
   "homepage": "http://zazler.com/",
+  "main": "app.js",
   "license": "Apache-2.0",
   "description": "Speed up development process by exposing API from any SQL easily. Especially useful for Android/iPhone development.",
   "keywords": [ "database", "rest", "crud", "api", "mysql", "postgresql", "postgre", "pg", "postgres", "sqlite", "sqlite3", "mariadb" ],
