@@ -1,17 +1,20 @@
 
+// node.js dependencies
 const VM   = require('vm');
 const md5  = require('md5');
 const util = require('util');
 const path = require('path');
 const fs   = require('fs');
 
+// 3rd party dependeincies
 const wildcard = require('wildcard');
 
+// local dependeincies
 const {DbConn,urlToConnection} = require('./db');
 const AccessRule = require('./access').AccessRule;
 const { Select, Filters, WriteRule, jsToQVal, expression } = require('./query')
 
-
+// to test if function is sync or async
 const AsyncFunction = (async () => {}).constructor;
 
 Object.map = (o, fn) => Object.keys(o).map((k, i) => fn(k, o[k], i));
@@ -91,6 +94,8 @@ class App {
   setConf(conf) {
     this.index = conf.index || '_schema.json'; // TODO: dashboard
     
+    if (typeof conf.templates === 'string') conf.templates = [conf.templates];
+    if (typeof conf.parsers   === 'string') conf.parsers   = [conf.parsers  ];
     this.tmplDirs = [... (conf.templates || []), __dirname + '/templates/'];
     this.prsDirs  = [... (conf.parsers   || []), __dirname + '/parsers/'  ];
 
@@ -367,13 +372,16 @@ class App {
     let tp = table !== '_schema' ? this.sqlType : SqlLt;
     let sc = table !== '_schema' ? sch          : (await this.lite.schema()).map(x => Object.assign(x, {read: true}));
 
-    let vr, V, Q;
+    let vr, V, Q, S;
     V = Select.tearUp(table, as, vr = this.combineVars(table, vars));
-    Q = await this.fillSelect(Select.create(table, as, V.Q), V.vars, meta, sc, dreq);
+    S = Select.create(table, as, V.Q);
+    S = this.filt.reduce((S, f) => S.tableFilter(f.from, f.where, f.order), S);
+    Q = await this.fillSelect(S, V.vars, meta, sc, dreq);
 
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
+    res.explainQuery = () => S.describe(); // this is prefilled query
     res.rowsTotal = async () => {
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
@@ -441,7 +449,9 @@ class App {
 
       if (R.retWhere) {
         let V = Select.tearUp(R.table, null, vars);
-        let s = (await this.fillSelect(Select.create(R.table, null, V.Q).tableFilter(R.table, R.retWhere), V.vars, meta, sch, dreq)).travField(travNew);
+        let S = Select.create(R.table, null, V.Q).tableFilter(R.table, R.retWhere);
+        S = this.filt.reduce((S, f) => S.tableFilter(f.from, f.where, f.order), S);
+        let s = (await this.fillSelect(S, V.vars, meta, sch, dreq)).travField(travNew);
         let sql = s.sqlSnippet(this.sqlType);
         this.evSql({sql: sql})
         results.push(ret = await db.query( sql ));
@@ -511,6 +521,9 @@ class App {
             Q = await me.fillSelect(Q, vars, meta, sch, Object.assign({}, evArg, { url: '' })); // URL is hack to use parseQuery in wsdl, ugly, shame on you, Kaiko :)
             let r = Q.select.ls[0].describe();
             return r;
+        }
+        , explainQuery: async function () {
+          
         }
     })
 
@@ -609,8 +622,6 @@ class App {
     if (!schema) schema = await this.schema();
     if (!meta) meta = this.meta;
 
-    S = this.filt.reduce((S, f) => S.tableFilter(f.from, f.where, f.order), S);
-
     // ?select=x&let.x=1 gives `SELECT 1 AS x`
     S = S.mapSelect(el => (el.token && vars['let.' + el.token]) ? el.toAs(el.token) : el);
 
@@ -635,26 +646,25 @@ class App {
     seenFields.sort((a,b) => a.prio - b.prio);
     let seenFieldsIdx = seenFields.reduce((m,c) => m.set(c.name, c), new Map());
 
-    let dumbSql = (dreq.url || '').match(/\.wsdl$/);
+    let dumbSql = (dreq.url || '').match(/\.wsdl$/); // FIXME: hack
     if (dumbSql) S = S.setLimit(0)
 
-    S = S.travVar(V => {
-      if (typeof vars[V.v] !== 'undefined') return jsToQVal(vars[V.v]);
-      else if (dumbSql) return V.toNull();
-      else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
-    })
     S = S.travToken(T => {
         let tb = seenFieldsIdx.get(T.token);
         if (tb) 
             return T.toField(tb.as)
         else if (this.varsWithout$ && typeof vars[T.token] !== 'undefined')
             return jsToQVal(vars[T.token]);
-        else if (dumbSql)
-          return T.toNull(); // hack
         else if (this.inlineStrings)
           return T.toString();
         else throw ("Unknown token: " + T.token);
     });
+
+    S = S.travVar(V => {
+      if (typeof vars[V.v] !== 'undefined') return jsToQVal(vars[V.v]);
+      else if (dumbSql) return V.toNull();
+      else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
+    })
 
     // test for protected fields;
     let needAuth = false, protFields = Set.fromArray(seenFields.filter(e => e.prot).map(e => e.table +'.'+e.name));
@@ -779,7 +789,7 @@ async function inputRows(dirs, fmt, body) {
       return irows; 
   }).catch(e => {
     console.error(e);
-    this.logError(e);
+    this.evError(e);
   });
 }
 

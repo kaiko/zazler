@@ -126,7 +126,7 @@ QValue.prototype = {
 , travFieldA : async function () { return this }
 , travFuncA  : async function () { return this }
 , isQValue   : true // is used to detect if it's type is parsed value
-, describe   : function () { throw new Error("describe in QValue") }
+, describe   : () => { throw new Error("describe in QValue") }
 , isSame     : function (el) { return this === el }
 , toNull     : () => qNull
 }
@@ -283,7 +283,7 @@ QOp.prototype = protoQ({
 , travTokenA: async function (fn) { return new QOp(await this.fst.travTokenA(fn), await Promise.all(this.ls.map(([op, val]) => val.travTokenA(fn).then(v => [op, v]) ))) }
 , travFieldA: async function (fn) { return new QOp(await this.fst.travFieldA(fn), await Promise.all(this.ls.map(([op, val]) => val.travFieldA(fn).then(v => [op, v]) ))) }
 , travFuncA : async function (fn) { return new QOp(await this.fst.travFuncA (fn), await Promise.all(this.ls.map(([op, val]) => val.travFuncA (fn).then(v => [op, v]) ))) }
-, describe  : function () { return { "expression": this.fst.describe(), "op": this.ls.map(([op,val]) => { return Object.assign({}, val.describe(), { "op": op }) })  } }
+, describe  : function () { return { "expression": this.fst.describe(), "operators": this.ls.map(([op,val]) => { return Object.assign({}, val.describe(), { "op": op }) })  } }
 , isSame    : function (el) { return this === el || (Array.isArray(el.ls) && el.ls.length === this.ls.length && this.fst.isSame(el.fst) && this.ls.every(([op,val], i) => op === el.ls[i][0] && val.isSame(el.ls[i][1]) ) ) }
 });
 
@@ -499,7 +499,13 @@ QSelect.prototype = protoQ({
     return x;
   },
   describe: function () {
-    return { select: this.select.describe() } // TODO, at the moment only for template parseQuery function
+    return Object.assign({ select: this.select.describe() }
+    , this.from   ? { from  : this.from  .describe() } : {}
+    , this.where  ? { where : this.where .describe() } : {}
+    , this.group  ? { group : this.group .describe() } : {}
+    , this.having ? { having: this.having.describe() } : {}
+    , this.limit  ? { limit : this.limit .describe() } : {}
+    );  // TODO, at the moment only for template parseQuery and wsdl function
   },
   setLimit: function (l = 0) {
     return new QSelect(this.select, this.from, this.where, this.group, this.having, null, new QLimit(l),this.opts  );

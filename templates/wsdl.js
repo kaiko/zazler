@@ -1,11 +1,21 @@
 
 contentType('application/wsdl+xml');
-function escXML (x) { return x }
+
+normXml = x => x.replace(/[^a-z0-9]+/g, '_')
+escXml = unsafe => unsafe.replace(/[<>&'"]/g, c => escXml.chars[c])
+escXml.chars = {
+    '<': '&lt'
+  , '>': '&gt'
+  , '&': '&amp;'
+  , "'": '&apos;'
+  , '"': '&quot;'}
+
 function getVars(expr) {
   var strs = [];
   var walk = function (e) {
     if (Array.isArray(e)) e.map(walk);
     // else if (e.str        ) { strs.push( e.str );  } // goal -- collect str
+    else if (e.operators) { walk(e.expression); e.operators.forEach(e => walk(e)); }
     else if (e.var        ) { strs.push( e.var );  }
     else if (e.parentheses) { walk(e.parentheses); }
     else if (e.func       ) { func.args.map(walk); }
@@ -17,12 +27,15 @@ function getVars(expr) {
   walk(expr);
   return strs;
 }
-var neededArgs = Object.keys(req.vars).filter(w => w.match(/:?where$/)).map(w => [w.split(':')[0], req.vars[w]]).map(([t,w]) => getVars(parseQuery(w, t)));
-var typeAlias = { str: 'string' };
-var NS = 'http://' + hostname + ':' + port + req.url; // $proto://$_SERVER[SERVER_NAME]:$_SERVER[SERVER_PORT]$_SERVER[REQUEST_URI]
 
-var ReqName = req.table + "Request";
-var ResName = req.table + "Response";
+var neededArgs = getVars(result.explainQuery().where);
+
+var typeAlias = { str: 'string' };
+var NS = (this.schema || 'http') + '://' + (this.hostname || '127.0.0.1') + ':' + (this.port||'80') + req.url;
+
+var TableX = normXml(req.table);
+var ReqName = /* TableX + */ "Request";
+var ResName = /* TableX + */ "Response";
 
 //////////////////////////////////////
 var O = '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -39,10 +52,6 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n    <wsdl:types>' +
 '\n        <schema targetNamespace="http://producer.x-road.eu" xmlns="http://www.w3.org/2001/XMLSchema">' +
 '\n        <import namespace="http://x-road.eu/xsd/xroad.xsd" schemaLocation="http://x-road.eu/xsd/xroad.xsd"/>' +
-//     <import namespace="http://x-road.eu/xsd/xroad.xsd"
-// '\n            <xs:import namespace="http://x-road.eu/xsd/xroad.xsd" schemaLocation="http://x-road.eu/xsd/xroad.xsd" />' +
-// '\n            <xs:import namespace="http://ws-i.org/profiles/basic/1.1/xsd" schemaLocation="http://ws-i.org/profiles/basic/1.1/swaref.xsd" />' +
-// '\n            <xs:import namespace="http://www.w3.org/2005/05/xmlmime" schemaLocation="http://www.w3.org/2005/05/xmlmime" />' +
 
 '\n    <xs:complexType name="fault">' +
 '\n      <xs:sequence>' +
@@ -71,8 +80,8 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
                 neededArgs.map(a =>
                     "\n <xs:element name='" + a + "' type='string'>" +
                     '   <xs:annotation><xs:appinfo>' +
-                    "   <xrd:title xml:lang='en'>Input " + escXML(a) + "</xrd:title>" +
-                    "   <xrd:title xml:lang='et'>Sisend " + escXML(a) + "</xrd:title>" +
+                    "   <xrd:title xml:lang='en'>Input " + escXml(a) + "</xrd:title>" +
+                    "   <xrd:title xml:lang='et'>Sisend " + escXml(a) + "</xrd:title>" +
                     "</xs:appinfo></xs:annotation>" +
                     " </xs:element>"
                 ).join('\n') +
@@ -86,16 +95,16 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n          <xs:element name="row">' +
 "\n             <xs:annotation>" +
 "\n               <xs:appinfo>" +
-'\n                 <xrd:title xml:lang="et">väljundkirje teenusest ' + req.table + '</xrd:title>' +
-'\n                 <xrd:title xml:lang="en">output row of ' + req.table + '</xrd:title>' +
+'\n                 <xrd:title xml:lang="et">väljundkirje teenusest ' + escXml(req.table) + '</xrd:title>' +
+'\n                 <xrd:title xml:lang="en">output row of ' + escXml(req.table) + '</xrd:title>' +
 "\n               </xs:appinfo>" +
 "\n             </xs:annotation>" +
 "\n             <xs:complexType><xs:sequence>" +
  result.cols.map((colName, i) =>
-    " <xs:element name='" + colName + "' type='xs:" + (typeAlias[result.types[i]] || result.types[i]) + "'>" +
+    " <xs:element name='" + escXml(colName) + "' type='xs:" + (typeAlias[result.types[i]] || result.types[i]) + "'>" +
     "\n   <xs:annotation><xs:appinfo>" +
-    '\n     <xrd:title xml:lang="en">' + result.cols[i] + '</xrd:title>' +
-    '\n     <xrd:title xml:lang="et">' + result.cols[i] + '</xrd:title>' +
+    '\n     <xrd:title xml:lang="en">' + escXml(result.cols[i]) + '</xrd:title>' +
+    '\n     <xrd:title xml:lang="et">' + escXml(result.cols[i]) + '</xrd:title>' +
     "\n   </xs:appinfo></xs:annotation>" +
     " </xs:element>"
     ).join("\n") +
@@ -109,16 +118,6 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 "\n </schema>" +
 "\n </wsdl:types>" +
 
-/*
-"\n     <element name='getResponse'>" +
-"\n        <xs:complexType>" +
-"\n            <xs:sequence>" +
-"\n                <element maxOccurs='unbounded' minOccurs='0' name='row' type='tns1:row' />" +
-"\n            </xs:sequence>" +
-"\n        </xs:complexType>" +
-"\n     </element>" +
-*/
-
 '\n<wsdl:message name="' + ReqName + '">' + '<wsdl:part name="' + ReqName  + '" element="tns:' + ReqName + '" /></wsdl:message>' +
 '\n<wsdl:message name="' + ResName + '">' + '<wsdl:part name="' + ResName  + '" element="tns:' + ResName + '" /></wsdl:message>' +
 
@@ -131,11 +130,11 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n    <wsdl:part name="protocolVersion" element="xrd:protocolVersion"/>' +
 '\n  </wsdl:message>' +
 
-'\n <wsdl:portType name="' + req.table + 'PortType">' +
-'\n    <wsdl:operation name="' + req.table + '"> ' +
+'\n <wsdl:portType name="' + TableX + 'PortType">' +
+'\n    <wsdl:operation name="' + TableX + '"> ' +
 '\n    <wsdl:documentation>' +
-'\n      <xrd:title xml:lang="et">Teenus ' + req.table  + '</xrd:title>' +
-'\n      <xrd:title xml:lang="en">Service ' + req.table + '</xrd:title>' +
+'\n      <xrd:title xml:lang="et">Teenus '  + escXml(req.table) + '</xrd:title>' +
+'\n      <xrd:title xml:lang="en">Service ' + escXml(req.table) + '</xrd:title>' +
 '\n      <xrd:notes xml:lang="et">Notes/Description of service</xrd:notes>' +
 '\n      <xrd:notes xml:lang="en">Notes/Description of service</xrd:notes>' +
 '\n      <xrd:techNotes xml:lang="et">Technical notes</xrd:techNotes>' +
@@ -146,9 +145,9 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n    </wsdl:operation> ' +
 '\n  </wsdl:portType> ' +
 
-"\n<wsdl:binding name='" + req.table + "Binding' type='tns:" + req.table + "PortType'>" +
+"\n<wsdl:binding name='" + TableX + "Binding' type='tns:" + TableX + "PortType'>" +
 "\n    <soap:binding style='document' transport='http://schemas.xmlsoap.org/soap/http' />" +
-"\n    <wsdl:operation name='" + req.table + "'>" +
+"\n    <wsdl:operation name='" + TableX + "'>" +
 "\n        <soap:operation soapAction='" + /*req.table + */ "' style='document' />" +
 "\n        <xrd:version>v1</xrd:version>" +
 "\n        <wsdl:input name='" + ReqName + "'>" +
@@ -160,7 +159,7 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n            <soap:header use="literal" message="tns:requestHeader" part="issue"/>' +
 '\n            <soap:header use="literal" message="tns:requestHeader" part="protocolVersion"/>' +
 '\n        </wsdl:input>' +
-"\n        <wsdl:output name='" + req.table + "Response'>" +
+"\n        <wsdl:output name='" + TableX + "Response'>" +
 "\n           <soap:body use='literal' />" +
 '\n           <soap:header use="literal" message="tns:requestHeader" part="client"/>' +
 '\n           <soap:header use="literal" message="tns:requestHeader" part="service"/>' +
@@ -174,9 +173,9 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 
 '\n' +
 
-'\n    <wsdl:service name="' + req.table + 'Service">' +
-'\n        <wsdl:port name="' + req.table + 'Port" binding="tns:' + req.table + 'Binding">' +
-'\n            <soap:address location="' + NS.replace(/\.wsdl/, '.soap').replace(/([&?])limit=[0-9]+/, '$1') + '"/>' +
+'\n    <wsdl:service name="' + TableX + 'Service">' +
+'\n        <wsdl:port name="' + TableX + 'Port" binding="tns:' + TableX + 'Binding">' +
+'\n            <soap:address location="' + NS.replace(/\.wsdl/, '.soap')+ '"/>' +
 '\n        </wsdl:port>' +
 '\n    </wsdl:service>'  +
 '\n    </wsdl:definitions>' +
