@@ -7,7 +7,7 @@ function urlToConnection(dbUrl) {
       type: 'pg'
     , port: parseInt(u.port || 5432) 
     , host: u.hostname
-    , database: u.pathname.split('/')[1]
+    , database: u.pathname ? u.pathname.split('/')[1] : ''
     }
     if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
     if (u.query) // yeah yeah URLSearchParams
@@ -21,7 +21,7 @@ function urlToConnection(dbUrl) {
       type: 'my'
     , port: parseInt(u.port || 5432) 
     , host: u.hostname
-    , database: u.pathname.split('/')[1]
+    , database: u.pathname ? u.pathname.split('/')[1] : ''
     }
     if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
 

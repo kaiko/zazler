@@ -1,12 +1,20 @@
 contentType('text/xml', 'utf-8');
 header('SOAPAction', "http://www.w3.org/2003/05/soap-envelope");
-function escHtml(str) { return str; return !str ? '' : String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;") .replace(/'/g, "&#39;") .replace(/</g, "&lt;") .replace(/>/g, "&gt;"); }
-(function () { 
-var escXml = escHtml;
+
+normXml = x => x.replace(/[^a-z0-9]+/g, '_')
+escXml = unsafe => unsafe.replace(/[<>&'"]/g, c => escXml.chars[c])
+escXml.chars = {
+    '<': '&lt'
+  , '>': '&gt'
+  , '&': '&amp;'
+  , "'": '&apos;'
+  , '"': '&quot;'}
+
+(() => { 
 
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));
-var S = escXml(req.table + "Response");
+var S = escXml("Response");
 
 var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://producer.x-road.eu" xmlns:iden="http://x-road.eu/xsd/identifiers" xmlns:xrd="http://x-road.eu/xsd/xroad.xsd">' +
@@ -15,15 +23,22 @@ vars.soapHeader +
 '\n    </SOAP-ENV:Header>' +
 '\n    <SOAP-ENV:Body>' +
 '\n        <ns1:' + S + '>' +
-'\n' +
+'\n';
+
+if (!vars.isWrite)
   result.data.map(r =>
     '<row>\n' +
-      cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '">' + escHtml(r[c]) + '</' + c + '>').join('\n') +
+      cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '">' + escXml(r[c]) + '</' + c + '>').join('\n') +
     '\n</row>'
   ).join("\n") +
-'\n        </ns1:' + S + '>' +
-'\n    </SOAP-ENV:Body>' +
-'\n</SOAP-ENV:Envelope>';
+else {
+    await post(req.table, {}, vars);
+    '<result>1</result>';
+}
+
+O+= '\n        </ns1:' + S + '>' +
+    '\n    </SOAP-ENV:Body>' +
+    '\n</SOAP-ENV:Envelope>';
 
 print(O);
 })()

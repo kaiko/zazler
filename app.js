@@ -92,12 +92,13 @@ class App {
   evError(e) { this.events.onError.forEach(fn => fn(e)); }
 
   setConf(conf) {
-    this.index = conf.index || '_schema.json'; // TODO: dashboard
+    this.index = conf.index || '_schema.dashboard';
     
     if (typeof conf.templates === 'string') conf.templates = [conf.templates];
     if (typeof conf.parsers   === 'string') conf.parsers   = [conf.parsers  ];
     this.tmplDirs = [... (conf.templates || []), __dirname + '/templates/'];
     this.prsDirs  = [... (conf.parsers   || []), __dirname + '/parsers/'  ];
+    this.addEngine("mt.html", __dirname + "/engines/microtemplate..js");
 
     this.read  = new AccessRule(conf.read);
     this.write = new AccessRule(conf.write);
@@ -168,7 +169,7 @@ class App {
     let sqlResult;
     try {
         sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), R.req);
-        if (fmt) sqlResult = sqlResult.format(fmt);
+        return fmt ? (await sqlResult.format(fmt)).text() : sqlResult;
     } catch (someErr) {
       if (someErr instanceof NeedAuth) { // this is not error, it is to control the flow
         throw "Unauthorized";
@@ -177,8 +178,6 @@ class App {
         throw someErr;
       }
     }
-
-    return sqlResult;
   }
 
   async expressRequest(req, res, next) {
@@ -227,7 +226,7 @@ class App {
         let r = b.elements[0]; // request 
         R.vars.soapHeader = require('xml-js').js2xml(h);
         let soapVars = r.elements.reduce((a,c) => Object.assign(a, {[c.name]: c.elements[0].text}), {});
-        Object.assign(R.vars);
+        Object.assign(R.vars, soapVars);
       } catch (e) {
         this.evError(e);
         console.log('Unexpected SOAP structure (' + e + ')');
@@ -257,18 +256,7 @@ class App {
           let [qt,f] = breakOn(qTable, '.');
           let [t,as] = breakOn(qt, '@');
           let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, arg);
-          sqlRes.format = async (qFmt, eVars = {}) => {
-              let R;
-              try {
-                R = await me.format(sqlRes, qFmt, qTable, Object.assign(qVars, eVars), arg, R.meta, sch);
-                if (R.error) throw R.error;
-              } catch (SF) {
-                this.evError(SF);
-                throw SF.toString();
-              }
-              return R.out;
-          }
-          return f ? await sqlRes.format(f) : sqlRes;
+          return f ? (await sqlRes.format(f)).text() : sqlRes;
       }
       , post: (qTable, getVars, input) => me.runPost(qTable, getVars, arg, R.meta, sch, input)
     }
@@ -309,13 +297,14 @@ class App {
         sqlResult = R.req.isPost
            ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, R.post, R, R.files)
            : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, {...R.req, ...{ cookie: req.cookies} } );
-        fmtResult = await this.format(sqlResult, R.format, R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
+        fmtResult = await sqlResult.format(R.format);
+        // before it was: , R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
     } catch (someErr) {
       if (someErr instanceof NeedAuth) {
         fmtResult.unAuthorized = true;
       } else {
         this.evError(someErr);
-        fmtResult = {error : someErr};
+        fmtResult = someErr
       }
     }
 
@@ -327,7 +316,7 @@ class App {
         let m  = Object.assing({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, auth.contentVars||{}) });
         try {
           sqlResult = await this.runQuery(t, Object.assign({}, vars, this.auth.contentVars || {}), R.meta, sch);
-          fmtResult = await this.format(sqlResult, f, t, vars, m, R.meta, sch);
+          fmtResult = (await sqlResult.format(f)).text();
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw "auth content wanted to auth again ... look out ;)" }
           this.evError(someE);
@@ -381,17 +370,13 @@ class App {
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
-    res.explainQuery = () => S.describe(); // this is prefilled query
+    res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
       return parseInt((await cn.query(csql)).data[0].count, 10);
     }
-    res.format = async (format, extraVars = {}) => {
-        let R = await this.format(res, format, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
-        if (R.error) throw R.error;
-        return R.out;
-    }
+    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
     return res;
   }
   async runPost(table, initVars, req, meta, sch, irows, dreq, files) {
@@ -489,8 +474,15 @@ class App {
   async format(queryResult, format, table, vars, req, meta, sch) {
     let F = await this.findTemplate(format);
     if (F.error) { throw F.error; }
-    var result = {out: ''}; // this is returned
-    var me = this;
+    let me = this, result = {
+      out: '',
+      text: () => {
+        if (result.error) {
+          me.evError(result.error);
+          throw result.error;
+        } else return result.out
+      }
+    }; // this is returned
 
     let evArg = Object.assign(req,
         { req: Object.assign({table, format, vars}, req)
@@ -501,11 +493,6 @@ class App {
             let [qt,fmt] = breakOn(qTable, '.');
             let [t,as] = breakOn(qt, '@');
             let sqlRes = await me.runSelect(t, as, qVars, meta, sch, evArg);
-            sqlRes.format = async function (qFmt, eVars = {}) {
-                let R = await me.format(sqlRes, qFmt, qTable, Object.assign({}, qVars, eVars), evArg, meta, sch);
-                if (R.error) throw R.error;
-                return R.out;
-            }
             return fmt ? await sqlRes.format(fmt) : sqlRes;
         }
         , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input)
@@ -522,22 +509,13 @@ class App {
             let r = Q.select.ls[0].describe();
             return r;
         }
-        , explainQuery: async function () {
-          
-        }
     })
-
-    queryResult.format = async (qFmt, evars= {}) => {
-      let R = await me.format(queryResult, qFmt, table, Object.assign({}, vars, evars), Object.assign({}, evArg, {isMain: false}), meta, sch); // TODO: this isMain is false here, I guess
-      if (R.error) throw R.error;
-      return R.out;
-    }
 
     return new Promise((ok, bad) => {
       F.script.runInNewContext(Object.assign({}, evArg, F.ctx
         , Object.onValues(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } )
         , { console: console
-        ,   result: queryResult
+        ,   result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
         ,   contentType: (t,c) => result.contentType = t
         ,   __success__: ok
         ,   __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
@@ -545,7 +523,7 @@ class App {
         ,   printLn: x => { result.out += x; }
         }));
     })
-    .then(() => { return result }).catch(e => { this.evError(e); result.error = e.toString(); return result; });
+    .then(() => { return result }).catch(e => { this.evError(e); result.error = e; return result; });
   }
 
   templNewDb() {
@@ -564,13 +542,13 @@ class App {
         await db.commit();
         await a.updateSchema()
       } },
-      query: { value: async function (tf, vars = {}) {
+      query: { value: async (tf, vars = {}) => {
         if (!a._schema) await a.schema();
         if (!a._schema) throw "Running query on empty database (or didn't you `await` for newTable)";
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
         let qRes = await a.runSelect(t, as, vars);
-        return !fmt ? qRes : await a.format(qRes, fmt, table, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() );
+        return !fmt ? qRes : (await a.format(qRes, fmt, table, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() )).text();
       } }
     })
   }
