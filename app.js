@@ -217,19 +217,40 @@ class App {
     if (this.dbName) R.req.dbName = this.dbName;
     R.req.format = R.format;
 
-    if (R.format === 'soap') {
-      R.req.isPost = false;
-      let x = require('xml-js').xml2js(await getBody(req));
-      try {
-        let h = x.elements[0].elements[0];
-        let b = x.elements[0].elements[1];
-        let r = b.elements[0]; // request 
-        R.vars.soapHeader = require('xml-js').js2xml(h);
-        let soapVars = r.elements.reduce((a,c) => Object.assign(a, {[c.name]: c.elements[0].text}), {});
-        Object.assign(R.vars, soapVars);
-      } catch (e) {
-        this.evError(e);
-        console.log('Unexpected SOAP structure (' + e + ')');
+    if (req.method === 'POST') {
+      if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
+        if (!req.body) {
+          console.log([
+            'Use express-form-data like this: '
+           ,"   const app   = require('express')();"
+           ,"   const forms = require('express-form-data');"
+           ,"   app.use(forms.parse({ autoFiles: true }));"
+           ,"   app.use(forms.format());"
+           ,"   app.use(forms.stream());"
+           ,"   app.use(forms.union());"
+          ].join("\n"));
+          throw "Fix forms";
+        }
+        R.post  = [Object.keys(req.body).filter(k => typeof req.body[k] === 'string').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {})];
+        R.files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
+      } else {
+        if (R.format === 'soap') {
+          R.req.isPost = false;
+          let x = require('xml-js').xml2js(await getBody(req));
+          try {
+            let h = x.elements[0].elements[0];
+            let b = x.elements[0].elements[1];
+            let r = b.elements[0]; // request 
+            R.vars.soapHeader = require('xml-js').js2xml(h);
+            let soapVars = r.elements.reduce((a,c) => Object.assign(a, {[c.name]: c.elements[0].text}), {});
+            Object.assign(R.vars, soapVars || {});
+          } catch (e) {
+            // console.log('Unexpected SOAP structure (' + e + ')');
+            this.evError(e);
+          }
+        } else  {
+          R.post = await inputRows(this.prsDirs, R.format, await getBody(req));
+        }
       }
     }
 
@@ -271,27 +292,6 @@ class App {
     R.table  = arg.req.table  || R.table;
     R.format = arg.req.format || R.format;
 
-    if (req.method === 'POST') {
-      if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
-        if (!req.body) {
-          console.log([
-            'Use express-form-data like this: '
-           ,"   const app   = require('express')();"
-           ,"   const forms = require('express-form-data');"
-           ,"   app.use(forms.parse({ autoFiles: true }));"
-           ,"   app.use(forms.format());"
-           ,"   app.use(forms.stream());"
-           ,"   app.use(forms.union());"
-          ].join("\n"));
-          throw "Fix forms";
-        }
-        R.post  = [Object.keys(req.body).filter(k => typeof req.body[k] === 'string').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {})];
-        R.files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
-      } else {
-        R.post = await inputRows(this.prsDirs, R.format, await getBody(req));
-      }
-    }
-
     let fmtResult = {}, sqlResult;
     try {
         sqlResult = R.req.isPost
@@ -329,6 +329,7 @@ class App {
       res.status(500).type('text').send(fmtResult.error);
     } else {
       if (fmtResult.contentType) res.append('Content-Type', fmtResult.contentType);
+      fmtResult.headers.forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
       R.pipe
         ? res.send(await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars})))
         : res.send(fmtResult.out);
@@ -480,6 +481,7 @@ class App {
     if (F.error) { throw F.error; }
     let me = this, result = {
       out: '',
+      headers: [],
       text: () => {
         if (result.error) {
           me.evError(result.error);
@@ -497,7 +499,7 @@ class App {
             let [qt,fmt] = breakOn(qTable, '.');
             let [t,as] = breakOn(qt, '@');
             let sqlRes = await me.runSelect(t, as, qVars, meta, sch, evArg);
-            return fmt ? await sqlRes.format(fmt) : sqlRes;
+            return fmt ? (await sqlRes.format(fmt)).text() : sqlRes;
         }
         , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input)
         , opts: o => req.opts[o] || null // TODO
@@ -521,6 +523,7 @@ class App {
         , { console: console
         ,   result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
         ,   contentType: (t,c) => result.contentType = t
+        ,   header     : (k,v) => result.headers.push({ key: k, value: v})
         ,   __success__: ok
         ,   __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
         ,   print:   x => { if (x !== undefined && x !== null) result.out += x; }

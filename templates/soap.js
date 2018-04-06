@@ -1,5 +1,5 @@
 contentType('text/xml', 'utf-8');
-header('SOAPAction', "http://www.w3.org/2003/05/soap-envelope");
+// header('SOAPAction', "");
 
 normXml = x => x.replace(/[^a-z0-9]+/g, '_')
 escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
@@ -8,8 +8,6 @@ escXml.chars = {
   , '>': '&gt'
   , "'": '&apos;'
   , '"': '&quot;'}
-
-(() => {
 
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));
@@ -24,15 +22,15 @@ vars.soapHeader +
 '\n        <ns1:' + S + '>' +
 '\n';
 
-if (!vars.isWrite)
-  result.data.map(r =>
+if (!vars.isWrite) {
+  O += result.data.map(r => (
     '<row>\n' +
       cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '">' + escXml(r[c]) + '</' + c + '>').join('\n') +
     '\n</row>'
-  ).join("\n") +
-else {
+  )).join("\n")
+} else {
     await post(req.table, {}, vars);
-    '<result>1</result>';
+    O += '<result>1</result>';
 }
 
 O+= '\n        </ns1:' + S + '>' +
@@ -40,7 +38,6 @@ O+= '\n        </ns1:' + S + '>' +
     '\n</SOAP-ENV:Envelope>';
 
 print(O);
-})()
 
 /*
 print('<?xml version="1.0"?>');
