@@ -1,11 +1,9 @@
-function escHtml(str) {
-  return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-}
+escHtml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escHtml.chars[c])
+escHtml.chars = {
+    '<': '&lt'
+  , '>': '&gt'
+  , "'": '&apos;'
+  , '"': '&quot;'}
 
 print ('<table>');
 // if (opts("head")) {
@@ -19,7 +17,7 @@ if (true) {
 print('<tbody>');
 result.data.forEach(function (row) {
   print("\n<tr>");
-  result.cols.forEach(function (fieldN, fieldId) {
+  result.cols.forEach((fieldN, fieldId) => {
     var n = "";
     if (row[fieldN] === null)
          print("<td class=\"null " + result.types[fieldId] + "\">N</td>\n");

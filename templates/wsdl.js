@@ -3,11 +3,10 @@
 contentType('text/xml');
 
 normXml = x => x.replace(/[^a-z0-9]+/g, '_')
-escXml = unsafe => unsafe.replace(/[<>&'"]/g, c => escXml.chars[c])
+escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
 escXml.chars = {
     '<': '&lt'
   , '>': '&gt'
-  , '&': '&amp;'
   , "'": '&apos;'
   , '"': '&quot;'}
 

@@ -67,7 +67,7 @@ class App {
     this.format    = this.format.bind(this);
     this.runSelect = this.runSelect.bind(this);
 
-    this.emptyResult = { data: [], cols: [], types: [], rawTypes: [], rowsTotal: async () => { } }
+    this.emptyResult = { data: [], cols: [], types: [], rawTypes: [], rowsTotal: () => 0 }
 
     this.events = { onWebRequest: [], onPost: [], onAfterUpload: [],  onSql: [], onError: [] /*, onAfterPost: [], onUpload: [], onEvGet: [] */ };
     this.eventMap = {
@@ -98,7 +98,7 @@ class App {
     if (typeof conf.parsers   === 'string') conf.parsers   = [conf.parsers  ];
     this.tmplDirs = [... (conf.templates || []), __dirname + '/templates/'];
     this.prsDirs  = [... (conf.parsers   || []), __dirname + '/parsers/'  ];
-    this.addEngine("mt.html", __dirname + "/engines/microtemplate..js");
+    this.addEngine("mt.html", __dirname + "/engines/microtemplate.js");
 
     this.read  = new AccessRule(conf.read);
     this.write = new AccessRule(conf.write);
@@ -153,8 +153,8 @@ class App {
 
     let _auth = null;
     R.meta = {
-      cookie: async () => { return {} }
-    , req:    async () => { return Object.onValues(R.req, jsToQVal) }
+      cookie: async () => ({})
+    , req:    async () => Object.onValues(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
             if (!me.auth) throw "Authentication needed but not configured!";
@@ -237,12 +237,12 @@ class App {
     let _auth = null, _cookie = null, _req = null;
     R.meta = {
       cookie: async () => { if (!_cookie) _cookie = Object.onValues(req.cookies||{}, jsToQVal); return _cookie; }
-    , req:    async () => { return Object.onValues(R.req, jsToQVal) }
+    , req:    async () => Object.onValues(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
             if (!me.auth) throw "Authentication needed but not configured!";
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
-            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => { return {} } }), unprotectedSchema, {})).data[0] || null;
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ( {} ) }), unprotectedSchema, {})).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
         return _auth;
@@ -345,8 +345,12 @@ class App {
   async runSelect(table, as, vars, meta, sch, dreq = {}) {
     if (!meta) meta = this.meta;
 
-    if (table === '_empty' ) return this.emptyResult;
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
+    if (table === '_empty' ) {
+      let r;
+      r = Object.assign({}, this.emptyResult, { format: (fmt, extraVars) => this.format(r, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch) });
+      return r;
+    }
 
     let alias = this.alias.find(a => a.name === table);
     if (alias) {
@@ -523,7 +527,7 @@ class App {
         ,   printLn: x => { result.out += x; }
         }));
     })
-    .then(() => { return result }).catch(e => { this.evError(e); result.error = e; return result; });
+    .then(() => result).catch(e => { this.evError(e); result.error = e; return result; });
   }
 
   templNewDb() {

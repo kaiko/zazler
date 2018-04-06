@@ -2,15 +2,14 @@ contentType('text/xml', 'utf-8');
 header('SOAPAction', "http://www.w3.org/2003/05/soap-envelope");
 
 normXml = x => x.replace(/[^a-z0-9]+/g, '_')
-escXml = unsafe => unsafe.replace(/[<>&'"]/g, c => escXml.chars[c])
+escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
 escXml.chars = {
     '<': '&lt'
   , '>': '&gt'
-  , '&': '&amp;'
   , "'": '&apos;'
   , '"': '&quot;'}
 
-(() => { 
+(() => {
 
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));

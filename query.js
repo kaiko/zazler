@@ -475,9 +475,7 @@ QSelect.prototype = protoQ({
            , !sameTable ? null : and(from.joins.filter(j => j.type === 'cross').map(j => j.on)) // all cross join whers
            ].filter(Boolean))
     , this.group, this.having
-    , this.order
-      ? (order ? this.order.append(order) : this.order)
-      : (order ? order : null)
+    , sameTable && order ? (this.order ? this.order.append(order) : order) : this.order
     , this.limit
     , this.opts);
   },
