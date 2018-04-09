@@ -51,8 +51,8 @@ var neededArgs, typeAlias, NS, TableX, ReqName, ResName;
 var tableName = (r => r.as || r.table)(result.explainQuery().from);
 
 TableX = normXml(tableName);
-ReqName = "Request";
-ResName = "Response";
+ReqName = tableName + "Request";
+ResName = tableName + "Response";
 
 typeAlias = { str: 'string' };
 

@@ -2,15 +2,15 @@
 
 # Zazler
 
-Zazler builds sophisticated API from SQL structure allowing to make queries safely.
+Zazler builds sophisticated API from SQL structure allowing to make API calls safely.
 
 Supported databases are MySQL, PostgreSQL and SQLite.
 
 # Motivation
 
-Custom API servers has makes development process slow and clumsy. Every change to API may cause problems for existing API users. Worse than that - it takes time for backend developers to implement small changes.
+Custom API makes development process slow and clumsy. Every change to API may cause problems for existing API users. Worse than that - it takes time for backend developers to implement small changes.
 
-Zazler instead allows to define on backend which data may be used and you can customize API call on frontend. And this is safe, no direct SQL access.
+Zazler instead allows to define on backend which data may be accessed and you can customize API call on frontend. And this is safe, no direct SQL access.
 
 ## When to use
 

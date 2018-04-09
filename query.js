@@ -649,7 +649,7 @@ QSelect.tearUp = function (table, as = null, inputVars = {}) {
     w.push(  QShortFn[op](  pval(left), typeof inputVars[key] === 'string' ? new QString(inputVars[key]) : jsToQVal(inputVars[key]) ) )
   );
 
-  let jexp = /^(r|l|c|)join\.([a-zA-Z0-9_-]*)(@(.*))?/;
+  let jexp = /^(r|l|c|)join\.([a-zA-Z0-9_-]+)(@(.*))?/;
   let lim = drv.limit ? onStr(QParser.limit.tryParse.bind(QParser.limit))(drv.limit) : null;
 
   let Q = Object.assign(
@@ -848,12 +848,12 @@ class WriteRule {
 
 let prefIf = (pref, txt)  => txt ? pref + txt : '';
 
-function and(ls) {
+and = ls => {
   if (!ls) return qEmpty;
   ls = ls.filter(x => !x.isEmpty);
-  if (ls.length === 0) return qEmpty;
-  if (ls.length === 1) return ls[0];
-  return new QOp(new QPar(ls[0]), ls.slice(1).map(w => [ 'AND', new QPar(w)]));
+  return  ls.length === 0 ? qEmpty
+        : ls.length === 1 ? ls[0]
+        : new QOp(new QPar(ls[0]), ls.slice(1).map(w => [ 'AND', new QPar(w)]));
 }
 
 // Takes object, return function that replaces all variables in QValue

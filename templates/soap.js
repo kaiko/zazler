@@ -1,5 +1,5 @@
 contentType('text/xml', 'utf-8');
-// header('SOAPAction', "");
+header('SOAPAction', '""');
 
 normXml = x => x.replace(/[^a-z0-9]+/g, '_')
 escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
@@ -9,6 +9,7 @@ escXml.chars = {
   , "'": '&apos;'
   , '"': '&quot;'}
 
+TableX = normXml(tableName);
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));
 var S = escXml("Response");

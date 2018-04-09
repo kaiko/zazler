@@ -233,8 +233,7 @@ class App {
         }
         R.post  = [Object.keys(req.body).filter(k => typeof req.body[k] === 'string').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {})];
         R.files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
-      } else {
-        if (R.format === 'soap') {
+      } else if (R.format === 'soap') {
           R.req.isPost = false;
           let x = require('xml-js').xml2js(await getBody(req));
           try {
@@ -248,9 +247,8 @@ class App {
             // console.log('Unexpected SOAP structure (' + e + ')');
             this.evError(e);
           }
-        } else  {
+      } else {
           R.post = await inputRows(this.prsDirs, R.format, await getBody(req));
-        }
       }
     }
 
@@ -263,7 +261,7 @@ class App {
         if (!_auth) {
             if (!me.auth) throw "Authentication needed but not configured!";
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
-            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ( {} ) }), unprotectedSchema, {})).data[0] || null;
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, {})).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
         return _auth;
@@ -312,11 +310,16 @@ class App {
       case 'basic': res.status(401).setHeader('WWW-Authenticate', 'Basic realm="' + this.auth.realm + '"'); res.send('Unauthorized'); res.end(); return; break;
       case 'location': res.status(307).location(this.auth.location); res.end(); return; break;
       case 'content': {
-        let [t,f] = breakOn(auth.content, '.');
-        let m  = Object.assing({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, auth.contentVars||{}) });
+        let [t,f] = breakOn(this.auth.content, '.');
+        if (!f) throw "Format missing in `auth.content` declaration";
+        let m  = Object.assign({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, this.auth.contentVars||{}) });
         try {
-          sqlResult = await this.runQuery(t, Object.assign({}, vars, this.auth.contentVars || {}), R.meta, sch);
-          fmtResult = (await sqlResult.format(f)).text();
+          sqlResult = await this.runSelect(t, null,
+              Object.assign({}, R.vars, this.auth.contentVars || {}),
+              Object.assign( R.meta, { auth: async () => null }),
+              sch,
+              {...R.req, ...{ cookie: req.cookies} });
+          // console.log(req.cookies, fmtResult);
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw "auth content wanted to auth again ... look out ;)" }
           this.evError(someE);
@@ -325,11 +328,13 @@ class App {
       }
     }
 
-    if (fmtResult.error) {
+    if (fmtResult.unAuthorized) {
+      res.status(500).type('text').send('Unauthorized');
+    } else if (fmtResult.error) {
       res.status(500).type('text').send(fmtResult.error);
     } else {
       if (fmtResult.contentType) res.append('Content-Type', fmtResult.contentType);
-      fmtResult.headers.forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
+      (fmtResult.headers || []).forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
       R.pipe
         ? res.send(await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars})))
         : res.send(fmtResult.out);
@@ -470,10 +475,13 @@ class App {
 
     await db.commit();
 
+    let r;
     // as result is list of queryResults but they must have same structure, combine these together
-    return  results.length
+    return  Object.assign({}, 
+      r  = results.length
       ? Object.assign({}, results[0], { data: results.reduce((R,r) => R.concat(r.data), []) })
-      : this.emptyResult
+      : this.emptyResult,
+      { format: (fmt, extraVars) => this.format(r, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch) });
   }
 
   async format(queryResult, format, table, vars, req, meta, sch) {
@@ -626,7 +634,7 @@ class App {
         .map(r => { let T = tbIdx.get(r.table); return Object.assign({}, r, { as: T.as, prio: T.prio}); }); // simplified object
 
     // important to have this here, before sort
-    if (!S.select) S = S.setSelect(seenFields.map(f => f.as + '.' + f.name));
+    if (!S.select) S = S.setSelect(seenFields.filter(f => !f.hide).map(f => (f.as || f.table) + '.' + f.name));
 
     seenFields.sort((a,b) => a.prio - b.prio);
     let seenFieldsIdx = seenFields.reduce((m,c) => m.set(c.name, c), new Map());

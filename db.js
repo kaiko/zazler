@@ -73,6 +73,15 @@ DbConn.prototype = { }
 
 function DbConnPg(props) {
   this.pg = require('pg');
+
+  // numbers must be handled as numbers, not strings
+  this.pg.types.setTypeParser(20, parseInt);
+  this.pg.types.setTypeParser(21, parseInt);
+  this.pg.types.setTypeParser(23, parseInt);
+  this.pg.types.setTypeParser(26, parseInt);
+  this.pg.types.setTypeParser(701, parseFloat);
+  this.pg.types.setTypeParser(700, parseFloat);
+
   this.pool = new this.pg.Pool(props);
   this._schema = null;
   this.props = props;
@@ -91,7 +100,12 @@ DbConnPg.prototype = {
     const R = await client.query(q);
     let r = R.rows;
     let o = R.fields.map(f => f.name);
-    let t = R.fields.map(f => { if (!DbConnPg.types[f.dataTypeID]) { console.log('Warning: no DbConnPg.type ' + f.dataTypeID); } return DbConnPg.types[f.dataTypeID]; })
+    let t = R.fields.map(f => {
+      if (!DbConnPg.types[f.dataTypeID]) {
+        console.error('Warning: no DbConnPg.type ' + f.dataTypeID);
+      }
+      return DbConnPg.types[f.dataTypeID];
+    })
     return { data: r, cols: o, types: t.map(([_,t]) => t), rawTypes: t.map(([t]) => t) };
   },
   transaction: async function () {
@@ -166,12 +180,12 @@ DbConnPg.types = {
   , 1082 : [ 'date'  , 'date'  ]
   , 1114 : [ 'date'  , 'date'  ]
   , 1184 : [ 'timestamp', 'datetime']
-
-  , 21   : [ 'smallint', 'int']
-  , 23   : [ 'integer',  'int']  // TODO what's the difference between 23 and 26
-  , 26   : [ 'integer', 'int']
-  , 1700 : [ 'numeric', 'float'] // TODO: should this be text
-  , 700  : [ 'real',   'float' ] // TODO is this really 'real'? check
+  , 20   : [ 'bigint'  , 'int'  ]
+  , 21   : [ 'smallint', 'int'  ]
+  , 23   : [ 'integer' , 'int'  ]  // TODO what's the difference between 23 and 26
+  , 26   : [ 'oid'     , 'int'  ]  // OID
+  , 1700 : [ 'numeric' , 'float']  // TODO: should this be text
+  , 700  : [ 'real'    , 'float' ] // TODO is this really 'real'? check
   , 701  : [ 'double precision', 'float' ]
   , 16   : [ 'boolean', 'bool' ]
   , 1114 : [ 'date', 'date']
