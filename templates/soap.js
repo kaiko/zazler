@@ -9,10 +9,11 @@ escXml.chars = {
   , "'": '&apos;'
   , '"': '&quot;'}
 
-TableX = normXml(tableName);
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));
-var S = escXml("Response");
+
+var tableName = (r => r.as || r.table)(result.explainQuery().from);
+var S = normXml(tableName) + 'Response';
 
 var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://producer.x-road.eu" xmlns:iden="http://x-road.eu/xsd/identifiers" xmlns:xrd="http://x-road.eu/xsd/xroad.xsd">' +

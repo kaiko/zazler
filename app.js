@@ -159,7 +159,10 @@ class App {
         if (!_auth) {
             if (!me.auth) throw "Authentication needed but not configured!";
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
-            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => { throw "Auth needed in auth" } }), unprotectedSchema, R)).data[0] || null;
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q,
+                  Object.assign({}, R.meta, { auth: async () => { throw "Auth needed in auth" } }),
+                  unprotectedSchema, [], R
+                )).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
         return _auth;
@@ -168,7 +171,7 @@ class App {
     
     let sqlResult;
     try {
-        sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), R.req);
+        sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), this.filt, R.req);
         return fmt ? (await sqlResult.format(fmt)).text() : sqlResult;
     } catch (someErr) {
       if (someErr instanceof NeedAuth) { // this is not error, it is to control the flow
@@ -220,7 +223,7 @@ class App {
     if (req.method === 'POST') {
       if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
         if (!req.body) {
-          console.log([
+          console.log([ // TODO: this is not console.log
             'Use express-form-data like this: '
            ,"   const app   = require('express')();"
            ,"   const forms = require('express-form-data');"
@@ -261,7 +264,7 @@ class App {
         if (!_auth) {
             if (!me.auth) throw "Authentication needed but not configured!";
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
-            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, {})).data[0] || null;
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, [], {})).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
         return _auth;
@@ -274,7 +277,7 @@ class App {
       , query: async function (qTable, qVars) { // FIXME: this is double in format
           let [qt,f] = breakOn(qTable, '.');
           let [t,as] = breakOn(qt, '@');
-          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, arg);
+          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, me.filt, arg);
           return f ? (await sqlRes.format(f)).text() : sqlRes;
       }
       , post: (qTable, getVars, input) => me.runPost(qTable, getVars, arg, R.meta, sch, input)
@@ -294,7 +297,7 @@ class App {
     try {
         sqlResult = R.req.isPost
            ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, R.post, R, R.files)
-           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, {...R.req, ...{ cookie: req.cookies} } );
+           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: req.cookies} } );
         fmtResult = await sqlResult.format(R.format);
         // before it was: , R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
     } catch (someErr) {
@@ -317,9 +320,8 @@ class App {
           sqlResult = await this.runSelect(t, null,
               Object.assign({}, R.vars, this.auth.contentVars || {}),
               Object.assign( R.meta, { auth: async () => null }),
-              sch,
+              sch, [], // remove filters in this context
               {...R.req, ...{ cookie: req.cookies} });
-          // console.log(req.cookies, fmtResult);
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw "auth content wanted to auth again ... look out ;)" }
           this.evError(someE);
@@ -348,7 +350,7 @@ class App {
   }
 
    // yeah, schema is in 'this' but on auth there is modified schema used 
-  async runSelect(table, as, vars, meta, sch, dreq = {}) {
+  async runSelect(table, as, vars, meta, sch, filt, dreq = {}) {
     if (!meta) meta = this.meta;
 
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
@@ -374,19 +376,19 @@ class App {
     let vr, V, Q, S;
     V = Select.tearUp(table, as, vr = this.combineVars(table, vars));
     S = Select.create(table, as, V.Q);
-    S = this.filt.reduce((S, f) => S.tableFilter(f.from, f.where, f.order), S);
+    S = filt.reduce((S, f) => S.tableFilter(f.from, f.where, f.order), S);
     Q = await this.fillSelect(S, V.vars, meta, sc, dreq);
 
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
+    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
       return parseInt((await cn.query(csql)).data[0].count, 10);
     }
-    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
     return res;
   }
   async runPost(table, initVars, req, meta, sch, irows, dreq, files) {
@@ -453,7 +455,6 @@ class App {
       }
 
       await Promise.all((Q.wrFields ? Q.wrFields() : []).map(field => {
-        // console.log('field', field, files[field]);
         if (!files[field]) return;
         const meta = me.meta(table, field);                             if (!meta) return;
         const [dir,nameExpr] = [meta['upload-dir'], meta['upload-name']]; if (!dir || !nameExpr) return;
@@ -506,7 +507,7 @@ class App {
         , query: async function (qTable, qVars) {
             let [qt,fmt] = breakOn(qTable, '.');
             let [t,as] = breakOn(qt, '@');
-            let sqlRes = await me.runSelect(t, as, qVars, meta, sch, evArg);
+            let sqlRes = await me.runSelect(t, as, qVars, meta, sch, me.filt, evArg);
             return fmt ? (await sqlRes.format(fmt)).text() : sqlRes;
         }
         , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input)
@@ -562,7 +563,7 @@ class App {
         if (!a._schema) throw "Running query on empty database (or didn't you `await` for newTable)";
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
-        let qRes = await a.runSelect(t, as, vars);
+        let qRes = await a.runSelect(t, as, vars, this.meta, this.schema, this.filt, {});
         return !fmt ? qRes : (await a.format(qRes, fmt, table, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() )).text();
       } }
     })
@@ -611,9 +612,8 @@ class App {
     return V
   }
 
+  // TODO: this must be part of query
   async fillSelect(S, vars, meta, schema = null, dreq={}) {
-    if (!schema) schema = await this.schema();
-    if (!meta) meta = this.meta;
 
     // ?select=x&let.x=1 gives `SELECT 1 AS x`
     S = S.mapSelect(el => (el.token && vars['let.' + el.token]) ? el.toAs(el.token) : el);
@@ -644,13 +644,13 @@ class App {
 
     S = S.travToken(T => {
         let tb = seenFieldsIdx.get(T.token);
-        if (tb) 
-            return T.toField(tb.as)
-        else if (this.varsWithout$ && typeof vars[T.token] !== 'undefined')
+        if (tb) {
+            return T.toField(tb.as);
+        } else if (this.varsWithout$ && typeof vars[T.token] !== 'undefined') {
             return jsToQVal(vars[T.token]);
-        else if (this.inlineStrings)
+        } else if (this.inlineStrings) {
           return T.toString();
-        else throw ("Unknown token: " + T.token);
+        } else throw ("Unknown token: " + T.token);
     });
 
     S = S.travVar(V => {

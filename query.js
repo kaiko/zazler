@@ -497,7 +497,8 @@ QSelect.prototype = protoQ({
     return x;
   },
   describe: function () {
-    return Object.assign({ select: this.select.describe() }
+    return Object.assign(
+      this.select ? { select: this.select.describe() } : {}
     , this.from   ? { from  : this.from  .describe() } : {}
     , this.where  ? { where : this.where .describe() } : {}
     , this.group  ? { group : this.group .describe() } : {}
@@ -998,9 +999,9 @@ letReplacer= function (vars) {
 }
 */
 
-custFnReplacer = function (vars, arg) {
+custFnReplacer = (funcs, arg) => {
   let rfn = fn => {
-    let F = vars[fn.name];
+    let F = funcs[fn.name];
     if (typeof F === 'string'  ) return new QTempl(fn.name, F , fn.args.map(a => a.travFunc(rfn)));
     if (typeof F === 'function') return new QTempl(fn.name, F(arg, fn.inf, fn.args.length), fn.args.map(a => a.travFunc(rfn))); // TODO async
     else return fn;

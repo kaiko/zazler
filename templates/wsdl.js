@@ -13,6 +13,7 @@ escXml.chars = {
 function getVars(expr) {
   var strs = [];
   var walk = function (e) {
+    if (!e) return; // not nice
     if (Array.isArray(e)) e.map(walk);
     // else if (e.str        ) { strs.push( e.str );  } // goal -- collect str
     else if (e.operators) { walk(e.expression); e.operators.forEach(e => walk(e)); }
@@ -31,6 +32,7 @@ function getVars(expr) {
 function getFields(expr) {
   var strs = [];
   var walk = function (e) {
+    if (!e) return; // not nice
     if (Array.isArray(e)) e.map(walk);
     else if (e.operators) { walk(e.expression); e.operators.forEach(e => walk(e)); }
     else if (e.field      ) { strs.push( e.field );  }
@@ -51,8 +53,8 @@ var neededArgs, typeAlias, NS, TableX, ReqName, ResName;
 var tableName = (r => r.as || r.table)(result.explainQuery().from);
 
 TableX = normXml(tableName);
-ReqName = tableName + "Request";
-ResName = tableName + "Response";
+ReqName = TableX;
+ResName = TableX + "Response";
 
 typeAlias = { str: 'string' };
 
