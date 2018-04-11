@@ -1,6 +1,6 @@
 
 let optAlias = {
-  'dist': 'distinct'
+  dist: "distinct"
 }
 let def = {
   askpw : true
@@ -13,6 +13,7 @@ let def = {
 , comma : false
 , distinct: false
 , transaction: false
+, schemaOnly: false
 }
 
 module.exports = {

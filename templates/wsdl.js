@@ -2,8 +2,8 @@
 // contentType('application/wsdl+xml');
 contentType('text/xml');
 
-normXml = x => x.replace(/[^a-z0-9]+/g, '_')
-escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
+normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/g, '_') : x;
+escXml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c]) : unsafe;
 escXml.chars = {
     '<': '&lt'
   , '>': '&gt'
@@ -126,6 +126,7 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 "\n               </xs:appinfo>" +
 "\n             </xs:annotation>" +
 "\n             <xs:complexType><xs:sequence>" +
+"\n             <!-- " + JSON.stringify(result) + "  -->" +
  result.cols.map((colName, i) =>
     " <xs:element name='" + escXml(colName) + "' type='xs:" + (typeAlias[result.types[i]] || result.types[i]) + "'>" +
     "\n   <xs:annotation><xs:appinfo>" +

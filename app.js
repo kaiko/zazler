@@ -13,6 +13,7 @@ const wildcard = require('wildcard');
 const {DbConn,urlToConnection} = require('./db');
 const AccessRule = require('./access').AccessRule;
 const { Select, Filters, WriteRule, jsToQVal, expression } = require('./query')
+const Opts = require('./opts');
 
 // to test if function is sync or async
 const AsyncFunction = (async () => {}).constructor;
@@ -190,7 +191,7 @@ class App {
 
     await this.block; // wait till schema is learned at the beginning
 
-    let R = { req: { user: null, pass: null, pipe: null, format: null, isMain: true, url: req.originalUrl, isPost: req.method === 'POST' }, vars: {}, meta: {}, cookie: {} };
+    let R = { req: { user: null, pass: null, pipe: null, format: null, isMain: true, url: req.originalUrl, isPost: req.method === 'POST' }, opts: {},  vars: {}, meta: {}, cookie: {} };
     let me = this;
     let [_, search] = breakOn(req.originalUrl, '?');
     [R.table, R.format] = breakOn(req.path.split('/').pop(), '.');
@@ -209,16 +210,23 @@ class App {
 
     if (this.auth && this.auth.type === 'basic')
       (([u,p]) => { if (u) { R.user = u; R.pass = p; } })( breakOn( btoa( ((req.get('Authorization') || '').match(/^Basic (.*)/) || [])[1] || ''), ':' ) );
-    R.req.user = R.user; // TODO: bad solution (DReq must resolve this)
-    R.req.pass = R.pass;
 
     R.vars =
       (search||'').split('&').filter(Boolean)
       .map(a => { let [k,v] = breakOn(a,'='); return { key: decodeURIComponent(k), val: decodeURIComponent(v)}; })
       .reduce((a,c) => Object.assign(a,{[c.key]: c.val}),{});
 
+    R.opts = Object.assign({}, Opts.def, R.vars.opts ? Opts.parse(R.vars.opts) : {});
+
+    if (R.format === 'wsdl') R.opts.schemaOnly = true; // TODO: remove this code and gain functionality with something smarter
+
     if (this.dbName) R.req.dbName = this.dbName;
+
+    // TODO: bad solution (DReq must resolve this)
     R.req.format = R.format;
+    R.req.opts = R.opts;
+    R.req.user = R.user;
+    R.req.pass = R.pass;
 
     if (req.method === 'POST') {
       if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
@@ -305,7 +313,7 @@ class App {
         fmtResult.unAuthorized = true;
       } else {
         this.evError(someErr);
-        fmtResult = someErr
+        fmtResult.error = someErr;
       }
     }
 
@@ -382,9 +390,11 @@ class App {
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
+    if (dreq.opts.schemaOnly) res.data = []; // with SQLite it fetches one row to know datatypes
     res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
+      if (dreq.opts.schemaOnly) return 0;
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
       return parseInt((await cn.query(csql)).data[0].count, 10);
@@ -511,7 +521,7 @@ class App {
             return fmt ? (await sqlRes.format(fmt)).text() : sqlRes;
         }
         , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input)
-        , opts: o => req.opts[o] || null // TODO
+        , opts: o => req.opts[o] || null
         , parseQuery: async function (expr, table, vars) {
             let alias = me.alias.find(a => a.name === table);
             if (alias) {
@@ -639,8 +649,15 @@ class App {
     seenFields.sort((a,b) => a.prio - b.prio);
     let seenFieldsIdx = seenFields.reduce((m,c) => m.set(c.name, c), new Map());
 
-    let dumbSql = (dreq.url || '').match(/\.wsdl$/); // FIXME: hack
-    if (dumbSql) S = S.setLimit(0)
+    if (dreq.opts.schemaOnly) {
+      if (this.sqlType === SqlLt) {
+        // With Sqlite there must be at least one row to fetch column names and types ("types")
+        // This result is removed in runSelect
+        S = S.emptyWhere().setLimit(1);
+      } else  {
+        S = S.setLimit(0);
+      }
+    }
 
     S = S.travToken(T => {
         let tb = seenFieldsIdx.get(T.token);
@@ -655,7 +672,7 @@ class App {
 
     S = S.travVar(V => {
       if (typeof vars[V.v] !== 'undefined') return jsToQVal(vars[V.v]);
-      else if (dumbSql) return V.toNull();
+      else if (dreq.opts.schemaOnly) return V.toNull();
       else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
     })
 

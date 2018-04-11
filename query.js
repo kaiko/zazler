@@ -507,7 +507,10 @@ QSelect.prototype = protoQ({
     );  // TODO, at the moment only for template parseQuery and wsdl function
   },
   setLimit: function (l = 0) {
-    return new QSelect(this.select, this.from, this.where, this.group, this.having, null, new QLimit(l),this.opts  );
+    return new QSelect(this.select, this.from, this.where, this.group, this.having, null, new QLimit(new QInt(l)), this.opts);
+  },
+  emptyWhere: function () {
+    return new QSelect(this.select, this.from, null, this.group, this.having, this.order, this.limit, this.opts);
   },
   count: function () {
     return new QSelect(new QList([ new QAs(new QRaw('count(*)'), new QName('count')) ]), this.from, this.where, this.group, this.having, null, null, Object.assign({}, this.opts, { distinct: false }));

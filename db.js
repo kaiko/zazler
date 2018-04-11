@@ -96,7 +96,6 @@ DbConnPg.prototype = {
     return res;
   },
   runQ: async function (q, client) {
-    // console.log('Q: ' + q);
     const R = await client.query(q);
     let r = R.rows;
     let o = R.fields.map(f => f.name);
@@ -117,7 +116,6 @@ DbConnPg.prototype = {
       query:  (sql) => this.runQ(sql, client),
       exec:   async (sql) => {
         try {
-          // console.log('R:', sql);
           let { rowCount } = await client.query(sql);
           return rowCount;
         } catch (SQLE) {
@@ -130,7 +128,6 @@ DbConnPg.prototype = {
   },
 /*
   exec: async function (sql) {
-    console.log('R: ' + sql);
     const client = await this.pool.connect();
     try {
       return await client.query(sql);
@@ -282,7 +279,6 @@ DbConnMy.prototype = {
   prototype: DbConn.prototype,
   // end:   async function () { await this.client.end() },
   query: function (q) {
-    // console.log('Q: ' + q);
     return new Promise((return_, onErr) => this.pool.query(q, (err, res, fields) => {
       if (err) { onErr( err); return; }
       let t = fields.map(f => DbConnMy.types[f.type] || ['str','str']);
@@ -298,11 +294,9 @@ DbConnMy.prototype = {
         return_({
           commit: () => { client.query('commit', () => client.release() ) }
         , query: sql => {
-            // console.log('Q: ', sql);
             return new Promise(ok => client.query(sql, (err,res,fld) => ok({ data: res, cols: fld.map(f => f.Field), types: fields.map(f => f.Type), rawTypes: fields.map(f => f.Type) })));
         }
         , exec : sql => {
-            // console.log('R:', sql);
             let ok, nok, P;
             P = new Promise((ok_,nok_) => { ok = ok_, nok = nok_; });
             client.query(sql, (err,res,fld) => {
@@ -378,7 +372,6 @@ DbConnLt.prototype = {
   prototype: DbConn.prototype,
   // end:   async function () { await this.client.end() },
   query: async function (q, cli) {
-    try {
       const client = cli ? cli : await this.conn;
       let R = await client.all(q);
       let cols = R.length ? Object.keys(R[0]) : {};
@@ -398,28 +391,16 @@ DbConnLt.prototype = {
       for (let r = 0; r < types.length; r++) typesGen[r] = tmap[types[r]] || 'str';
 
       return { data: R, cols: R.length === 0 ? [] : Object.keys(R[0]), types: typesGen, rawTypes: types };
-    } finally {
-      // client.release();
-    }
   },
   transaction: async function () {
     const client = await this.conn;
     await client.run('BEGIN');
     return {
-      commit: () => client.run('COMMIT'),
+      commit: ()  => client.run('COMMIT'),
       query:  sql => client.query(sql),
-      exec:   sql => {
-          // console.log('R:', sql);      // FIXME try-catch rollback
-          return client.run(sql);
-      }
+      exec:   sql => client.run(sql)
     }
   },
-/*
-  exec: async function (q) {
-    const client = await this.conn;
-    return client.run(q);
-  },
-*/
   schema: async function () {
     if (!this._schema) await this.learn();
     return this._schema;

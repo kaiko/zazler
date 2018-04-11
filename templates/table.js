@@ -1,4 +1,4 @@
-escHtml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escHtml.chars[c])
+escHtml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escHtml.chars[c]) : unsafe;
 escHtml.chars = {
     '<': '&lt'
   , '>': '&gt'
@@ -15,7 +15,7 @@ if (true) {
 }
 
 print('<tbody>');
-result.data.forEach(function (row) {
+result.data.forEach(row => {
   print("\n<tr>");
   result.cols.forEach((fieldN, fieldId) => {
     var n = "";
