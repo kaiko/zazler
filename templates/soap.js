@@ -1,7 +1,7 @@
 contentType('text/xml', 'utf-8');
 header('SOAPAction', '""');
 
-normXml = x => x.replace(/[^a-z0-9]+/g, '_')
+normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/gi, '_') : x
 escXml = unsafe => unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c])
 escXml.chars = {
     '<': '&lt'
@@ -12,7 +12,7 @@ escXml.chars = {
 var T = { str: 'string' };
 var cols = JSON.parse(JSON.stringify(result.cols));
 
-var tableName = (r => r.as || r.table)(result.explainQuery().from);
+var tableName = req.tableAs || req.table;
 var S = normXml(tableName) + 'Response';
 
 var O = '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -24,15 +24,16 @@ vars.soapHeader +
 '\n        <ns1:' + S + '>' +
 '\n';
 
-if (!vars.isWrite) {
+if (! ['insert','update','delete'].includes(vars.servtype)) {
   O += result.data.map(r => (
     '<row>\n' +
       cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '">' + escXml(r[c]) + '</' + c + '>').join('\n') +
     '\n</row>'
   )).join("\n")
 } else {
-    await post(req.table, {}, vars);
-    O += '<result>1</result>';
+    let P = await post(req.table, vars, [vars]);
+    //O += '<!-- ' + JSON.stringify(P) + ' -->\n'
+    O += '<result>' + (P.affected.length ? P.affected[0] : '0') + '</result>';
 }
 
 O+= '\n        </ns1:' + S + '>' +

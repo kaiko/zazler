@@ -1,4 +1,6 @@
 const url = require('url');
+const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
+const Lite3 = require('sqlite3');
 
 function urlToConnection(dbUrl) {
   let u = url.parse(dbUrl);
@@ -113,8 +115,8 @@ DbConnPg.prototype = {
     await client.query('BEGIN');
     return {
       commit: async () => { await client.query('COMMIT'); client.release(); }, // TODO: why I get error message releasing connection (already released)
-      query:  (sql) => this.runQ(sql, client),
-      exec:   async (sql) => {
+      query:  sql => this.runQ(sql, client),
+      exec:   async sql => {
         try {
           let { rowCount } = await client.query(sql);
           return rowCount;
@@ -300,7 +302,7 @@ DbConnMy.prototype = {
             let ok, nok, P;
             P = new Promise((ok_,nok_) => { ok = ok_, nok = nok_; });
             client.query(sql, (err,res,fld) => {
-              if (err) nok(err);
+              if (err) nok(err); // TODO rollback, close
               else ok(res.affectedRows)
             });
             return P;
@@ -363,8 +365,7 @@ DbConnMy.types = {
 }
 
 function DbConnLt(props) {
-  var lt = require('sqlite'); //sqlite is wrapper for sqlite3
-  this.conn = lt.open(props.filename || ':memory:', { Promise });
+  this.conn = Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
   this.props = props;
   this._schema = null;
 }
@@ -393,12 +394,18 @@ DbConnLt.prototype = {
       return { data: R, cols: R.length === 0 ? [] : Object.keys(R[0]), types: typesGen, rawTypes: types };
   },
   transaction: async function () {
-    const client = await this.conn;
+    const client = await Lite.open(this.props.filename || ':memory:', { Promise });
     await client.run('BEGIN');
     return {
-      commit: ()  => client.run('COMMIT'),
-      query:  sql => client.query(sql),
-      exec:   sql => client.run(sql)
+      query:  sql => client.query(sql)
+    , exec:  async (sql) => { // TODO error handling and rollback
+        let {changes, lastID} = await client.run(sql);
+        return changes;
+      }
+    , commit: async ()  => {
+        await client.run('COMMIT');
+        await client.close();
+      }
     }
   },
   schema: async function () {

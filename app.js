@@ -279,7 +279,7 @@ class App {
       }
     }
 
-    let arg = { vars: R.vars, table: R.table
+    let arg = { vars: R.vars, table: R.table, tableAs: R.as
       , cookie: req.cookies || {}
       , req: R.req
       , query: async function (qTable, qVars) { // FIXME: this is double in format
@@ -364,7 +364,7 @@ class App {
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
     if (table === '_empty' ) {
       let r;
-      r = Object.assign({}, this.emptyResult, { format: (fmt, extraVars) => this.format(r, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch) });
+      r = Object.assign({}, this.emptyResult, { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
       return r;
     }
 
@@ -391,7 +391,7 @@ class App {
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
     if (dreq.opts.schemaOnly) res.data = []; // with SQLite it fetches one row to know datatypes
-    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch);
+    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
       if (dreq.opts.schemaOnly) return 0;
@@ -402,7 +402,7 @@ class App {
     return res;
   }
   async runPost(table, initVars, req, meta, sch, irows, dreq, files) {
-    let me = this, results = [], rules;
+    let me = this, results = [], affected = [], rules;
     files = files || {};
 
     let as, alias = this.alias.find(a => a.name === table);
@@ -417,9 +417,10 @@ class App {
     // TODO: same as in Select (let, sqlFn...) (`fill` for R and CUD?)
     let vars = this.combineVars(table, initVars);
 
-    let arg = Object.assign({}, req, {
-      vars: vars,
-      post: Object.keys(files).length === 0 ? irows : irows.map(r => Object.assign({}, r, Object.onValues(files, f => f.path)))
+    let arg = Object.assign({}, req,
+    { tableAs: as
+    , vars: vars
+    , post: Object.keys(files).length === 0 ? irows : irows.map(r => Object.assign({}, r, Object.onValues(files, f => f.path)))
     });
     this.events.onPost.reduce((ev, fn) => fn(ev), arg);
     irows = arg.post; // f.path should be updaded file name in browser
@@ -447,10 +448,13 @@ class App {
 
       let travNew = f => f.table === 'new' ? jsToQVal(irows[i][f.field] || null) : f;
 
-      let cmd, affected, sqlGen = Q.sqlCommands(this.sqlType);
+      let cmd, sqlGen = Q.sqlCommands(this.sqlType);
       do {
-        cmd = sqlGen.next(affected);
-        if (cmd.value) affected = await db.exec(cmd.value);
+        cmd = sqlGen.next();
+        if (cmd.value) {
+          this.evSql({sql: cmd.value});
+          affected.push( await db.exec(cmd.value) );
+        }
       } while (cmd.value && !cmd.done);
 
 
@@ -488,14 +492,14 @@ class App {
 
     let r;
     // as result is list of queryResults but they must have same structure, combine these together
-    return  Object.assign({}, 
+    return  Object.assign({ affected: affected }, 
       r  = results.length
       ? Object.assign({}, results[0], { data: results.reduce((R,r) => R.concat(r.data), []) })
       : this.emptyResult,
-      { format: (fmt, extraVars) => this.format(r, fmt, table, Object.assign({}, vars, extraVars), dreq, meta, sch) });
+      { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
   }
 
-  async format(queryResult, format, table, vars, req, meta, sch) {
+  async format(queryResult, format, table, tableAs, vars, req, meta, sch) {
     let F = await this.findTemplate(format);
     if (F.error) { throw F.error; }
     let me = this, result = {
@@ -510,7 +514,7 @@ class App {
     }; // this is returned
 
     let evArg = Object.assign(req,
-        { req: Object.assign({table, format, vars}, req)
+        { req: Object.assign({table, tableAs, format, vars}, req)
         , vars: vars
         , auth: async () => { try { return await meta.auth(); } catch (e) { if (e instanceof NeedAuth) return null; else throw e; } }
         , newDb: this.templNewDb.bind(this)
@@ -574,7 +578,7 @@ class App {
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
         let qRes = await a.runSelect(t, as, vars, this.meta, this.schema, this.filt, {});
-        return !fmt ? qRes : (await a.format(qRes, fmt, table, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() )).text();
+        return !fmt ? qRes : (await a.format(qRes, fmt, table, as, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() )).text();
       } }
     })
   }
@@ -671,7 +675,7 @@ class App {
     });
 
     S = S.travVar(V => {
-      if (typeof vars[V.v] !== 'undefined') return jsToQVal(vars[V.v]);
+      if (vars.hasOwnProperty(V.v)) return jsToQVal(vars[V.v]);
       else if (dreq.opts.schemaOnly) return V.toNull();
       else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
     })

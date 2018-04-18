@@ -2,7 +2,7 @@
 // contentType('application/wsdl+xml');
 contentType('text/xml');
 
-normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/g, '_') : x;
+normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/ig, '_') : x;
 escXml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c]) : unsafe;
 escXml.chars = {
     '<': '&lt'
@@ -57,10 +57,11 @@ ReqName = TableX;
 ResName = TableX + "Response";
 
 typeAlias = { str: 'string' };
+isWrite =  ['insert','update','delete'].includes((vars||{}).servtype);
 
-NS = (this.schema || 'https') + '://' + (this.hostname || '127.0.0.1') + ':' + (this.port||'80') + req.url;
+NS = (this.schema || 'https') + '://' + (this.hostname || '127.0.0.1') + req.url;
 
-if (!vars.isWrite) {
+if (!isWrite) {
 neededArgs = getVars(result.explainQuery().where);
 
 //////////////////////////////////////
@@ -126,7 +127,7 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 "\n               </xs:appinfo>" +
 "\n             </xs:annotation>" +
 "\n             <xs:complexType><xs:sequence>" +
-"\n             <!-- " + JSON.stringify(result) + "  -->" +
+// "\n             <!-- " + JSON.stringify(result) + "  -->" +
  result.cols.map((colName, i) =>
     " <xs:element name='" + escXml(colName) + "' type='xs:" + (typeAlias[result.types[i]] || result.types[i]) + "'>" +
     "\n   <xs:annotation><xs:appinfo>" +
@@ -162,7 +163,7 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n    <wsdl:documentation>' +
 '\n      <xrd:title xml:lang="et">Teenus '  + escXml(tableName) + '</xrd:title>' +
 '\n      <xrd:title xml:lang="en">Service ' + escXml(tableName) + '</xrd:title>' +
-'\n      <xrd:notes xml:lang="et">Notes/Description of service</xrd:notes>' +
+'\n      <xrd:notes xml:lang="et">Teenuse kirjeldus</xrd:notes>' +
 '\n      <xrd:notes xml:lang="en">Notes/Description of service</xrd:notes>' +
 '\n      <xrd:techNotes xml:lang="et">Technical notes</xrd:techNotes>' +
 '\n      <xrd:techNotes xml:lang="en">Technical notes</xrd:techNotes>' +
@@ -206,13 +207,18 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n        </wsdl:port>' +
 '\n    </wsdl:service>'  +
 '\n    </wsdl:definitions>' +
+'\n    </wsdl:definitions>' +
 '\n';
 
-} else if (vars.isWrite) {
+} else {
 
-neededArgs = getFields(result.explainQuery(true).select);
+if (vars.servtype === 'insert') neededArgs = getFields(result.explainQuery(true).select); else
+if (vars.servtype === 'delete') neededArgs = getVars(result.explainQuery().where); else
+if (vars.servtype === 'update') neededArgs = getVars(result.explainQuery().where).concat(getFields(result.explainQuery(true).select)) ;
 
 var O = '<?xml version="1.0" encoding="UTF-8"?>' +
+// '\n<!-- neededArgs (' + vars.servtype + '): ' + JSON.stringify(neededArgs) + ' -->' +
+// '\n<!-- neededArgs (' + vars.servtype + '): ' + JSON.stringify((result.explainQuery().where)) + ' -->' +
 '\n<wsdl:definitions targetNamespace="http://producer.x-road.eu" ' +
 '\n        xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"' +
 '\n        xmlns:tns="http://producer.x-road.eu"' +
@@ -298,9 +304,9 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n    <wsdl:documentation>' +
 '\n      <xrd:title xml:lang="et">Teenus '  + escXml(tableName) + '</xrd:title>' +
 '\n      <xrd:title xml:lang="en">Service ' + escXml(tableName) + '</xrd:title>' +
-'\n      <xrd:notes xml:lang="et">Notes/Description of service</xrd:notes>' +
+'\n      <xrd:notes xml:lang="et">Teenuse kirjeldus</xrd:notes>' +
 '\n      <xrd:notes xml:lang="en">Notes/Description of service</xrd:notes>' +
-'\n      <xrd:techNotes xml:lang="et">Technical notes</xrd:techNotes>' +
+'\n      <xrd:techNotes xml:lang="et">Tehniline info</xrd:techNotes>' +
 '\n      <xrd:techNotes xml:lang="en">Technical notes</xrd:techNotes>' +
 '\n    </wsdl:documentation>' +
 '\n      <wsdl:input  name="' + ReqName + '" message="tns:' + ReqName + '"/> ' +

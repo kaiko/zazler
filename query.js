@@ -798,6 +798,7 @@ class WriteRule {
 
     this.message = inf.message; // error message
     this.on  = QParser.value.tryParse(this.on);
+    this.vars = inf.vars || {};
     this.set = QSet.fromObjectExpr(inf.table, inf.set || {})
     if (this.where) {
       if (typeof this.where !== 'string') throw "Write-rule `where` must be string (currently: " + JSON.stringify(this.where) + ")";
@@ -824,13 +825,13 @@ class WriteRule {
     let travNew = f => f.table === 'new' ? newRow[f.field] || qNull : f;
 
     let varFn = V => {
-      if (vars[V.v]) return jsToQVal(vars[V.V]);
+      if (vars.hasOwnProperty(V.v)) return jsToQVal(vars[V.v]);
       else throw "Variable missing: " + V.v;
     }
 
     let tokenFn = T => {
       if (allFields.has(T.token)) return T.toField(this.table);
-      if (this.varsWithout$ && typeof vars[T.token] !== 'undefined') return jsToQVal(vars[T.token]);
+      if (this.varsWithout$ && vars.hasOwnProperty(T.token)) return jsToQVal(vars[T.token]);
       else if (this.inlineStrings) return T.toString();
       else throw "Unknown text in expression: " + T.token;
     }
