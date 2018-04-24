@@ -207,7 +207,6 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n        </wsdl:port>' +
 '\n    </wsdl:service>'  +
 '\n    </wsdl:definitions>' +
-'\n    </wsdl:definitions>' +
 '\n';
 
 } else {
