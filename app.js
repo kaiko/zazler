@@ -358,7 +358,7 @@ class App {
   }
 
    // yeah, schema is in 'this' but on auth there is modified schema used 
-  async runSelect(table, as, vars, meta, sch, filt, dreq = {}) {
+  async runSelect(table, as, vars, meta, sch, filt, dreq = {opts:{}}) { // FIXME: when is dreq missing?
     if (!meta) meta = this.meta;
 
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
@@ -627,7 +627,7 @@ class App {
   }
 
   // TODO: this must be part of query
-  async fillSelect(S, vars, meta, schema = null, dreq={}) {
+  async fillSelect(S, vars, meta, schema = null, dreq={opts:{}}) {
 
     // ?select=x&let.x=1 gives `SELECT 1 AS x`
     S = S.mapSelect(el => (el.token && vars['let.' + el.token]) ? el.toAs(el.token) : el);
