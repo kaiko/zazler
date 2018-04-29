@@ -1,5 +1,5 @@
-contentType('text/xml', 'utf-8');
 header('SOAPAction', '""');
+contentType('text/xml');
 
 normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/gi, '_') : x
 escXml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c]) : unsafe;

@@ -1,13 +1,47 @@
 {
   "name": "zazler",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com> (http://www.zazler.com/)",
   "homepage": "http://zazler.com/",
   "main": "app.js",
   "license": "Apache-2.0",
   "description": "Speed up development process by exposing API from any SQL easily. Especially useful for Android/iPhone development.",
-  "keywords": [ "database", "rest", "crud", "api", "mysql", "postgresql", "postgre", "pg", "postgres", "sqlite", "sqlite3", "mariadb", "excel", "json", "csv", "xml" ],
-  "contributors": [ { "name": "Kaiko Kaur", "email": "kaiko.kaur@gmail.com" } ],
-  "dependencies": { "md5": "latest", "mysql": "latest", "pg": "latest", "sqlite": "latest", "wildcard": "latest", "parsimmon": "latest", "express": "latest", "xml-js": "latest" },
-  "engines" : { "node" : ">=8.0.0 <10.0" }
+  "keywords": [
+    "database",
+    "rest",
+    "crud",
+    "api",
+    "mysql",
+    "postgresql",
+    "postgre",
+    "pg",
+    "postgres",
+    "sqlite",
+    "sqlite3",
+    "mariadb",
+    "excel",
+    "json",
+    "csv",
+    "xml"
+  ],
+  "contributors": [
+    {
+      "name": "Kaiko Kaur",
+      "email": "kaiko.kaur@gmail.com"
+    }
+  ],
+  "dependencies": {
+    "express": "^4.16.3",
+    "express-form-data": "^2.0.5",
+    "cookie-parser": "^1.4.3",
+    "mysql": "latest",
+    "parsimmon": "^1.7.3",
+    "pg": "latest",
+    "sqlite": "latest",
+    "wildcard": "^1.1.2",
+    "md5": "latest"
+  },
+  "engines": {
+    "node": ">=8.0.0 <10.0"
+  }
 }

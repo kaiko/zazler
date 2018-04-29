@@ -37,6 +37,45 @@ breakOn = (str, on) => {
   let pos = str.indexOf(on);
   return pos === -1 ? [str] : [str.substr(0,pos), str.substr(pos+1) ];
 }
+const exceptionRegister = {
+// id,  A - isAppFatal, R - isReqFatal, w - isWrapper (if it not app or req fatal, it is more like warning)
+  101: [ 'A' , "Auth must have `table` property" ]
+, 102: [ 'A' , "auth must have `realm`, `content` or `location` parameter" ]
+, 103: [ 'A' , "auth must have `select` option. NB! everything you put into select can be accessed in the web after authentication" ]
+, 104: [ 'A' , "Authentication needed but not configured!" ]
+, 105: [ 'A' , "Auth needed in auth" ]
+, 106: [ 'A' , "Format missing in `auth.context` declaration" ]
+, 110: [ ''  , "Unknown event" ]
+, 200: [ 'A' , "Use module express-form-data" ]
+, 300: [ 'R' , "Template not found" ]
+, 301: [ 'R' , "Format missing" ]
+, 500: [ 'R' , "Running query on empty database (or didn't you `await` for newTable)" ]
+, 501: [ 'Aw', "Engine initialization error" ]
+, 502: [ 'Aw', "Engine script error" ]
+, 503: [ 'Rw', "Template error" ]
+, 504: [ 'R' , "Unknown token" ]
+, 505: [ 'R' , "Can't read request body" ]
+}
+
+class Exception {
+  constructor (no, err, context = {}) {
+    this.no = no;
+    this.context = context;
+    this.err = err;
+    let m = exceptionRegister[no];
+    this.isAppFatal = m[0].indexOf('A') > -1;
+    this.isReqFatal = m[0].indexOf('R') > -1;
+    this.isWrapper  = m[0].indexOf('w') > -1;
+    this.message    = m[1];
+  }
+  toString() {
+    if (this.isWrapper)
+      return this.err.toString();
+    else return this.message + ' #no' + this.no;
+  }
+  toWeb() {
+  }
+}
 
 /////////////
 
@@ -111,13 +150,13 @@ class App {
     if (!conf.auth) this.auth = null;
     else {
       let A = conf.auth;
-      if (!conf.auth.table) throw "Auth must have `table` property";
+      if (!conf.auth.table) throw new Exception(101, new Error(), {conf: conf.auth});
       this.auth = Select.tearUp(conf.auth.table, null, conf.auth);
       if      (A.location) { this.auth.type = 'location'; this.auth.location = A.location; }
       else if (A.content)  { this.auth.type = 'content';  this.auth.content  = A.content; this.auth.contentVars = conf.auth['content-vars'] || {} }
       else if (A.realm  )  { this.auth.type = 'basic';    this.auth.realm = A.realm; }
-      else throw "auth must have `realm`, `content` or `location` parameter";
-      if (!this.auth.Q.select) throw "auth must have `select` option. NB! everything you put into select can be accessed in the web after authentication";
+      else throw new Exception(102, new Error(), { auth: conf.auth });
+      if (!this.auth.Q.select) throw new Exception(103, new Error(), { auth: conf.auth });
     }
 
     this.filt   = (conf.filter||conf.filters||[]).map(f => Select.tearUp(f.table, null, f).Q );
@@ -158,10 +197,10 @@ class App {
     , req:    async () => Object.onValues(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
-            if (!me.auth) throw "Authentication needed but not configured!";
+            if (!me.auth) throw new Exception(104, new Error());
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
             _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q,
-                  Object.assign({}, R.meta, { auth: async () => { throw "Auth needed in auth" } }),
+                  Object.assign({}, R.meta, { auth: async () => { throw new Exception(105, new Error(), { auth: conf.auth })  } }),
                   unprotectedSchema, [], R
                 )).data[0] || null;
         }
@@ -171,106 +210,63 @@ class App {
     }
     
     let sqlResult;
-    try {
-        sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), this.filt, R.req);
-        return fmt ? (await sqlResult.format(fmt)).text() : sqlResult;
-    } catch (someErr) {
-      if (someErr instanceof NeedAuth) { // this is not error, it is to control the flow
-        throw "Unauthorized";
-      } else {
-        this.evError(someErr);
-        throw someErr;
-      }
+    try { sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), this.filt, R.req); }
+    catch (someErr) {
+      if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
+      else { this.evError(someErr); throw someErr; }
+    }
+
+    if (!fmt) return sqlResult;
+
+    try { return (await sqlResult.format(fmt)).text(); }
+    catch (someErr) {
+      if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
+      else { this.evError(someErr); throw someErr; }
     }
   }
 
-  async expressRequest(req, res, next) {
-    req.setEncoding('utf8');
-
-    this.logAccess(req);
-
+  // returns { headers: [ {key: val }], text: return content, code: 200 }
+  // code can be "unauthorized" (401)
+  // if error/exception emerges it is thrown
+  async request(tableFormat, vars, cookies = {}, extra = {}, post = null, files = null, user = null, pass = null) {
+    
     await this.block; // wait till schema is learned at the beginning
 
-    let R = { req: { user: null, pass: null, pipe: null, format: null, isMain: true, url: req.originalUrl, isPost: req.method === 'POST' }, opts: {},  vars: {}, meta: {}, cookie: {} };
-    let me = this;
-    let [_, search] = breakOn(req.originalUrl, '?');
-    [R.table, R.format] = breakOn(req.path.split('/').pop(), '.');
-    if (!R.table) [R.table, R.format] = breakOn(this.index, '.');
-    [R.table, R.as] = breakOn(R.table, '@');
+    const me = this;
+    const sch = await this.schema();
 
-    if (!R.format) {
-      res.write('Format missing');
-      res.end();
-      return;
-    }
+    let table, as, format;
+
+    [table, format] = breakOn(tableFormat, '.');
+    if (!table) [table, format] = breakOn(this.index, '.');
+    [table, as] = breakOn(table, '@');
+
+    if (!format) throw new Exception(301, new Error());
+
+    let R = { table, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
+
+    R.opts = Object.assign({}, Opts.def, vars.opts ? Opts.parse(vars.opts) : {});
+
+    if (this.dbName) R.req.dbName = this.dbName;
 
     // test for pipe
     R.pipe = R.req.pipe = Object.keys(this.pipes).find(p => R.format.substr(-(p.length+1)) === "." + p);
     if (R.pipe) R.format = R.format.substr(0, R.format.length - R.pipe.length - 1); // cut off pipe part (".pdf" for example)
-
-    if (this.auth && this.auth.type === 'basic')
-      (([u,p]) => { if (u) { R.user = u; R.pass = p; } })( breakOn( btoa( ((req.get('Authorization') || '').match(/^Basic (.*)/) || [])[1] || ''), ':' ) );
-
-    R.vars =
-      (search||'').split('&').filter(Boolean)
-      .map(a => { let [k,v] = breakOn(a,'='); return { key: decodeURIComponent(k), val: decodeURIComponent(v)}; })
-      .reduce((a,c) => Object.assign(a,{[c.key]: c.val}),{});
-
-    R.opts = Object.assign({}, Opts.def, R.vars.opts ? Opts.parse(R.vars.opts) : {});
-
-    if (R.format === 'wsdl') R.opts.schemaOnly = true; // TODO: remove this code and gain functionality with something smarter
-
-    if (this.dbName) R.req.dbName = this.dbName;
 
     // TODO: bad solution (DReq must resolve this)
     R.req.format = R.format;
     R.req.opts = R.opts;
     R.req.user = R.user;
     R.req.pass = R.pass;
+    R.vars = R.req.vars = vars;
 
-    if (req.method === 'POST') {
-      if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
-        if (!req.body) {
-          console.log([ // TODO: this is not console.log
-            'Use express-form-data like this: '
-           ,"   const app   = require('express')();"
-           ,"   const forms = require('express-form-data');"
-           ,"   app.use(forms.parse({ autoFiles: true }));"
-           ,"   app.use(forms.format());"
-           ,"   app.use(forms.stream());"
-           ,"   app.use(forms.union());"
-          ].join("\n"));
-          throw "Fix forms";
-        }
-        R.post  = [Object.keys(req.body).filter(k => typeof req.body[k] === 'string').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {})];
-        R.files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
-      } else if (R.format === 'soap') {
-          R.req.isPost = false;
-          let x = require('xml-js').xml2js(await getBody(req));
-          try {
-            let h = x.elements[0].elements[0];
-            let b = x.elements[0].elements[1];
-            let r = b.elements[0]; // request 
-            R.vars.soapHeader = require('xml-js').js2xml(h);
-            let soapVars = r.elements.reduce((a,c) => Object.assign(a, {[c.name]: c.elements[0].text}), {});
-            Object.assign(R.vars, soapVars || {});
-          } catch (e) {
-            // console.log('Unexpected SOAP structure (' + e + ')');
-            this.evError(e);
-          }
-      } else {
-          R.post = await inputRows(this.prsDirs, R.format, await getBody(req));
-      }
-    }
-
-    let sch = await this.schema();
     let _auth = null, _cookie = null, _req = null;
     R.meta = {
-      cookie: async () => { if (!_cookie) _cookie = Object.onValues(req.cookies||{}, jsToQVal); return _cookie; }
+      cookie: async () => { if (!_cookie) _cookie = Object.onValues(cookies||{}, jsToQVal); return _cookie; }
     , req:    async () => Object.onValues(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
-            if (!me.auth) throw "Authentication needed but not configured!";
+            if (!me.auth) throw new Exception(104, new Error());
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
             _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, [], {})).data[0] || null;
         }
@@ -280,7 +276,7 @@ class App {
     }
 
     let arg = { vars: R.vars, table: R.table, tableAs: R.as
-      , cookie: req.cookies || {}
+      , cookie: cookies || {}
       , req: R.req
       , query: async function (qTable, qVars) { // FIXME: this is double in format
           let [qt,f] = breakOn(qTable, '.');
@@ -297,6 +293,7 @@ class App {
       else 
         fn(arg);
     }
+
     R.vars = arg.vars;
     R.table  = arg.req.table  || R.table;
     R.format = arg.req.format || R.format;
@@ -305,7 +302,7 @@ class App {
     try {
         sqlResult = R.req.isPost
            ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, R.post, R, R.files)
-           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: req.cookies} } );
+           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: cookies} } );
         fmtResult = await sqlResult.format(R.format);
         // before it was: , R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
     } catch (someErr) {
@@ -318,20 +315,20 @@ class App {
     }
 
     if (fmtResult.unAuthorized) switch(this.auth.type) {
-      case 'basic': res.status(401).setHeader('WWW-Authenticate', 'Basic realm="' + this.auth.realm + '"'); res.send('Unauthorized'); res.end(); return; break;
-      case 'location': res.status(307).location(this.auth.location); res.end(); return; break;
+      case 'basic':    return { status: 401, headers: [ { key: 'WWW-Authenticate', value: 'Basic realm="' + this.auth.realm + '"' } ], body: "Unauthorized" }; break;
+      case 'location': return { status: 307, headers: [ { key: 'Location', value: this.auth.location } ], body: '' }; break;
       case 'content': {
-        let [t,f] = breakOn(this.auth.content, '.');
-        if (!f) throw "Format missing in `auth.content` declaration";
+        let [t,f] = breakOn(this.auth.content, '.'); // TODO: move it to setConf or somewhere
+        if (!f) throw new Exception(106, new Error(), { auth: conf.auth });
         let m  = Object.assign({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, this.auth.contentVars||{}) });
         try {
           sqlResult = await this.runSelect(t, null,
               Object.assign({}, R.vars, this.auth.contentVars || {}),
               Object.assign( R.meta, { auth: async () => null }),
               sch, [], // remove filters in this context
-              {...R.req, ...{ cookie: req.cookies} });
+              {...R.req, ...{ cookie: cookies } });
         } catch (someE) {
-          if (someE instanceof NeedAuth) { throw "auth content wanted to auth again ... look out ;)" }
+          if (someE instanceof NeedAuth) { throw new Exception(105, new Error(), { auth: conf.auth }); }
           this.evError(someE);
           fmtResult.error = someE;
         }
@@ -339,21 +336,76 @@ class App {
     }
 
     if (fmtResult.unAuthorized) {
-      res.status(500).type('text').send('Unauthorized');
+      return { status: 500, headers: [ { key: 'content-type', value: 'text' } ], body: 'Unauthorized' }; // res.status(500).type('text').send('Unauthorized');
     } else if (fmtResult.error) {
-      res.status(500).type('text').send(fmtResult.error);
+      throw fmtResult.error;
     } else {
-      if (fmtResult.contentType) res.append('Content-Type', fmtResult.contentType);
-      (fmtResult.headers || []).forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
-      R.pipe
-        ? res.send(await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars})))
-        : res.send(fmtResult.out);
+      return { status: 200
+        , headers: fmtResult.headers.concat(fmtResult.contentType ? [{ key: 'content-type', value: fmtResult.contentType}] : [])
+        , body: !R.pipe
+          ? fmtResult.out 
+          : await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: cookies}}, { vars: R.vars }))
+      }
     }
+  }
+
+  async expressRequest(req, res, next) {
+    req.setEncoding('utf8');
+
+    this.logAccess(req);
+
+    let [_, search] = breakOn(req.originalUrl, '?');
+    let vars =
+      (search||'').split('&').filter(Boolean)
+      .map(a => { let [k,v] = breakOn(a,'='); return { key: decodeURIComponent(k), val: decodeURIComponent(v)}; })
+      .reduce((a,c) => Object.assign(a,{[c.key]: c.val}),{});
+
+    let post = null, files = null, user = null, pass = null;
+    if (this.auth && this.auth.type === 'basic')
+      (([u,p]) => { if (u) { user = u; pass = p; } })( breakOn( btoa( ((req.get('Authorization') || '').match(/^Basic (.*)/) || [])[1] || ''), ':' ) );
+
+    if (req.method === 'POST') {
+      if ((req.headers['content-type']||'').toLowerCase().indexOf('multipart/form-data;') === 0) {
+        if (!req.body) {
+          console.log([ // TODO: this is not console.log
+            'Use express-form-data like this: '
+           ,"   const app   = require('express')();"
+           ,"   const forms = require('express-form-data');"
+           ,"   app.use(forms.parse({ autoFiles: true }));"
+           ,"   app.use(forms.format());"
+           ,"   app.use(forms.stream());"
+           ,"   app.use(forms.union());"
+          ].join("\n"));
+          throw new Exception(200, new Error()); 
+        }
+        post  = [Object.keys(req.body).filter(k => typeof req.body[k] === 'string').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {})];
+        files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
+      }
+      else {
+        post = await inputRows(this.prsDirs, format, await getBody(req));
+      }
+    }
+
+    let x ;
+    try {
+      x = await this.request(req.path.split('/').pop(), vars, { url: req.originalUrl}, req.cookies, post, files, user, pass);
+    } catch (e) {
+      console.log(e);
+      res.write(e.toString());
+      res.end();
+      return;
+    }
+    
+    res.status(x.status);
+    (x.headers || []).forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
+    res.send(x.body);
     res.end();
+
+    next();
   }
 
   on(ev, fn) {
-    if (!this.eventMap[ev]) throw "Event `" + ev + '` is unknown (allowed: ' + Object.keys(this.eventMap).join(', ') + ")";
+    if (!this.eventMap[ev]) throw new Exception(110, new Error(), { unknownEvent: ev, allowedEvents: Object.keys(this.eventMap) });
     this.events[this.eventMap[ev]].push(fn);
   }
 
@@ -501,14 +553,13 @@ class App {
 
   async format(queryResult, format, table, tableAs, vars, req, meta, sch) {
     let F = await this.findTemplate(format);
-    if (F.error) { throw F.error; }
     let me = this, result = {
       out: '',
       headers: [],
       text: () => {
         if (result.error) {
           me.evError(result.error);
-          throw result.error;
+          throw new Exception(503, result.error, { format: format, vars: vars, table: table });
         } else return result.out
       }
     }; // this is returned
@@ -574,7 +625,7 @@ class App {
       } },
       query: { value: async (tf, vars = {}) => {
         if (!a._schema) await a.schema();
-        if (!a._schema) throw "Running query on empty database (or didn't you `await` for newTable)";
+        if (!a._schema) throw new Exception(500, new Error());
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
         let qRes = await a.runSelect(t, as, vars, this.meta, this.schema, this.filt, {});
@@ -613,7 +664,7 @@ class App {
       return { ctx: {}, script: new VM.Script('(async function () { \n try { ' + script + '\n__success__(); } catch (E) { __failure__(E); } })()') };
     }
 
-    return { error: 'Format not found (' + fmt + ')' };
+    throw new Exception(300, new Error(), { template: fmt }) 
   }
 
   // vars from conf, user defined vars from url and constants (can't be overwritten)
@@ -715,10 +766,15 @@ class App {
   async addEngine(ext, filepath) {
     try {
       this.engines[ext] = { ext: ext, filepath: filepath, script: await util.promisify(fs.readFile)(filepath, 'utf8') };
+    } catch (e) { 
+      this.evError(e);
+      throw new Exception(501, e, { ext: ext, filepath: filepath });
+    }
+    try {
       this.engines[ext].script = new VM.Script('(async function () { \n try { ' + this.engines[ext].script + '\n__success__(); } catch (E) { __failure__(E); } })()')
     } catch (e) {
       this.evError(e);
-      throw e;
+      throw new Exception(502, e, { ext: ext, filepath: filepath });
     }
   }
   addPipe(ext, fn) {
