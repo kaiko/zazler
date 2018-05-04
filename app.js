@@ -18,25 +18,8 @@ const Opts = require('./opts');
 // to test if function is sync or async
 const AsyncFunction = (async () => {}).constructor;
 
-Object.map = (o, fn) => Object.keys(o).map((k, i) => fn(k, o[k], i));
-Object.onValues = (o, fn) => {
-  let K = Object.keys(o);
-  return K.map((k, i) => fn(o[k], k, i)).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
-Object.onValuesA = async (o, fn) => {
-  let K = Object.keys(o);
-  return (await Promise.all(K.map((k, i) => fn(o[k], k, i)))).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
+const { breakOn, getBody, btoa, trace } = require('./toolbox');
 
-Set.fromArray = a => a.reduce((s, e) => s.add(e), new Set());
-
-btoa = s => new Buffer(s, 'base64').toString('binary');
-getBody = req => new Promise(ok => { let b = ''; req.on('data', c => b += c); req.on('end', () => ok(b)) });
-trace = (v, mark) => { console.log(mark ? mark + '\n' + v + '\n/' + mark : v); return v; }
-breakOn = (str, on) => {
-  let pos = str.indexOf(on);
-  return pos === -1 ? [str] : [str.substr(0,pos), str.substr(pos+1) ];
-}
 const exceptionRegister = {
 // id,  A - isAppFatal, R - isReqFatal, w - isWrapper (if it not app or req fatal, it is more like warning)
   101: [ 'A' , "Auth must have `table` property" ]
@@ -133,6 +116,9 @@ class App {
 
   setConf(conf) {
     this.index = conf.index || '_schema.dashboard';
+
+    this.varsWithout$  = conf.hasOwnProperty('varsWithout$' ) ? !!conf.varsWithout$  : false;
+    this.inlineStrings = conf.hasOwnProperty('inlineStrings') ? !!conf.inlineStrings : false;
     
     if (typeof conf.templates === 'string') conf.templates = [conf.templates];
     if (typeof conf.parsers   === 'string') conf.parsers   = [conf.parsers  ];
@@ -145,7 +131,7 @@ class App {
     this.hide  = new AccessRule(conf.hide);
     this.prot  = new AccessRule(conf.prot || conf.protect);
 
-    this.wrules = (conf["write-rules"] || []).map(r => new WriteRule(r));
+    this.wrules = (conf["write-rules"] || []).map(r => new WriteRule(r, { varsWithout$: this.varsWithout$, inlineStrings: this.inlineStrings } ));
 
     if (!conf.auth) this.auth = null;
     else {
@@ -178,8 +164,6 @@ class App {
       if ( f) this.metaF[t][f] = v;
     });
 
-    this.varsWithout$  = conf.hasOwnProperty('varsWithout$' ) ? !!conf.varsWithout$  : false;
-    this.inlineStrings = conf.hasOwnProperty('inlineStrings') ? !!conf.inlineStrings : false;
   }
 
   meta(t, f = null) { return f ? (this.metaF[t]||{})[f] || null : this.metaT[t] || null; }
@@ -301,7 +285,7 @@ class App {
     let fmtResult = {}, sqlResult;
     try {
         sqlResult = R.req.isPost
-           ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, R.post, R, R.files)
+           ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, post, R, R.files)
            : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: cookies} } );
         fmtResult = await sqlResult.format(R.format);
         // before it was: , R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
@@ -320,17 +304,18 @@ class App {
       case 'content': {
         let [t,f] = breakOn(this.auth.content, '.'); // TODO: move it to setConf or somewhere
         if (!f) throw new Exception(106, new Error(), { auth: conf.auth });
-        let m  = Object.assign({}, R.meta.req,{ isMain: false, vars: Object.assign({}, R.vars, this.auth.contentVars||{}) });
+        let m  = Object.assign({}, R.meta.req, { isMain: false, vars: Object.assign({}, R.vars, this.auth.contentVars||{}) });
         try {
           sqlResult = await this.runSelect(t, null,
               Object.assign({}, R.vars, this.auth.contentVars || {}),
               Object.assign( R.meta, { auth: async () => null }),
               sch, [], // remove filters in this context
               {...R.req, ...{ cookie: cookies } });
+          fmtResult = await sqlResult.format(f);
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw new Exception(105, new Error(), { auth: conf.auth }); }
           this.evError(someE);
-          fmtResult.error = someE;
+          fmtResult = { error: someE };
         }
       }
     }
@@ -382,6 +367,7 @@ class App {
         files =  Object.keys(req.body).filter(k => typeof req.body[k] === 'object').reduce((r, k) => Object.assign(r, {[k]: req.body[k]}), {});
       }
       else {
+        let [table, format] = breakOn(req.path.split('/').pop(), '.');
         post = await inputRows(this.prsDirs, format, await getBody(req));
       }
     }
@@ -393,12 +379,13 @@ class App {
       console.log(e);
       res.write(e.toString());
       res.end();
+      next();
       return;
     }
-    
+
     res.status(x.status);
     (x.headers || []).forEach(({key,value}) => res.append(key, value)); // TODO: some limits?
-    res.send(x.body);
+    res.write(x.body);
     res.end();
 
     next();
@@ -442,7 +429,7 @@ class App {
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
     let res = await cn.query( rsql ); 
-    if (dreq.opts.schemaOnly) res.data = []; // with SQLite it fetches one row to know datatypes
+    if ((dreq.opts||{}).schemaOnly) res.data = []; // with SQLite it fetches one row to know datatypes
     res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
@@ -704,7 +691,7 @@ class App {
     seenFields.sort((a,b) => a.prio - b.prio);
     let seenFieldsIdx = seenFields.reduce((m,c) => m.set(c.name, c), new Map());
 
-    if (dreq.opts.schemaOnly) {
+    if ((dreq.opts || {}).schemaOnly) {
       if (this.sqlType === SqlLt) {
         // With Sqlite there must be at least one row to fetch column names and types ("types")
         // This result is removed in runSelect

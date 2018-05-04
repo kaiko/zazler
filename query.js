@@ -3,24 +3,7 @@ const util = require('util');
 const testSql = require('sqlite').open(':memory:', { Promise });
 const Opts = require('./opts');
 const {QFunctions} = require('./query-functions');
-
-Object.map = (o, fn) => Object.keys(o).map((k, i) => fn(k, o[k], i));
-Object.onValues = function (o, fn) {
-  let K = Object.keys(o);
-  return K.map((k, i) => fn(o[k], k, i)).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
-Object.onValuesA = async function (o, fn) {
-  let K = Object.keys(o);
-  return (await Promise.all(K.map((k, i) => fn(o[k], k, i)))).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
-if (!Object.values) Object.values = o => Object.keys(o).map(k => o[k]);
-
-Map.prototype.setWith = function (key, val, fn) {
-  if (this.has(key)) this.set(key, fn(this.get(key), key));
-  else this.set(key, val); 
-}
-
-trace = x => { console.log(x); return x; }
+const { trace } = require('./toolbox');
 
 ///////////////
 
@@ -799,7 +782,7 @@ class WriteRule {
     this.message = inf.message; // error message
     this.on  = QParser.value.tryParse(this.on);
     this.vars = inf.vars || {};
-    this.set = QSet.fromObjectExpr(inf.table, inf.set || {})
+    this.set = QSet.fromObjectExpr(inf.table, inf.set || {}); // TODO: nice error message here
     if (this.where) {
       if (typeof this.where !== 'string') throw "Write-rule `where` must be string (currently: " + JSON.stringify(this.where) + ")";
       this.where = QParser.value.tryParse(this.where);

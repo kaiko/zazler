@@ -1,0 +1,192 @@
+{
+    "table": "_schema",
+    "format": "debug.json",
+    "user": null,
+    "pass": null,
+    "isMain": true,
+    "isPost": false,
+    "vars": {},
+    "cookie": {
+        "url": "/simple-schema/_schema.debug.json"
+    },
+    "req": {
+        "table": "_schema",
+        "format": "debug.json",
+        "vars": {},
+        "user": null,
+        "pass": null,
+        "isMain": true,
+        "isPost": false,
+        "opts": {
+            "askpw": true,
+            "body": false,
+            "head": true,
+            "map": true,
+            "save": false,
+            "text": false,
+            "point": true,
+            "comma": false,
+            "distinct": false,
+            "transaction": false,
+            "schemaOnly": false
+        },
+        "cookie": {
+            "url": "/simple-schema/_schema.debug.json"
+        }
+    },
+    "console": {},
+    "result": {
+        "data": [
+            {
+                "name": "alfa",
+                "tablename": "alfa",
+                "rawtype": "table",
+                "gentype": "table",
+                "comment": "",
+                "read": 1,
+                "write": 0,
+                "protect": 0
+            },
+            {
+                "name": "users",
+                "tablename": "users",
+                "rawtype": "table",
+                "gentype": "table",
+                "comment": "",
+                "read": 1,
+                "write": 0,
+                "protect": 0
+            },
+            {
+                "name": "w",
+                "tablename": "w",
+                "rawtype": "table",
+                "gentype": "table",
+                "comment": "",
+                "read": 1,
+                "write": 0,
+                "protect": 0
+            },
+            {
+                "name": "id",
+                "tablename": "alfa",
+                "rawtype": "integer",
+                "gentype": "int",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "a",
+                "tablename": "alfa",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "b",
+                "tablename": "alfa",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "id",
+                "tablename": "users",
+                "rawtype": "integer",
+                "gentype": "int",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "login",
+                "tablename": "users",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "passwd",
+                "tablename": "users",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "a",
+                "tablename": "w",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "b",
+                "tablename": "w",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            },
+            {
+                "name": "c",
+                "tablename": "w",
+                "rawtype": "text",
+                "gentype": "str",
+                "comment": "",
+                "read": 1,
+                "write": null,
+                "protect": 0
+            }
+        ],
+        "cols": [
+            "name",
+            "tablename",
+            "rawtype",
+            "gentype",
+            "comment",
+            "read",
+            "write",
+            "protect"
+        ],
+        "types": [
+            "str",
+            "str",
+            "str",
+            "str",
+            "str",
+            "double",
+            "double",
+            "double"
+        ],
+        "rawTypes": [
+            "string",
+            "string",
+            "string",
+            "string",
+            "string",
+            "number",
+            "number",
+            "number"
+        ]
+    }
+}

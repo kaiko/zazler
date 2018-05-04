@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>alfa</title>
+<meta charset="utf-8"/>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="robots" content="noindex, nofollow">
+<style type="text/css">
+* { font-family: "Trebutech MS", Verdana, Arial, sans-serif; }
+table { border-collapse: collapse; }
+td, th { padding: 2px 4px; border: 1px solid #e5e5e5; }
+tr:hover, thead tr { background-color: rgb(245,245,245); }
+.int, .double { text-align: right }
+.null { color: #eee; font-style: italic; }
+.str { text-align: left }
+.date .time .datetime { white-space: nowrap }
+.bool { text-align: right }
+</style>
+</head>
+<body><table><thead><tr><th>id</th><th>a</th><th>b</th></tr></thead>
+<tbody>
+<tr><td class="int">1</td>
+<td class="str">a</td>
+<td class="str">b</td>
+</tr></tbody>
+</table>
+</body>
+</html>

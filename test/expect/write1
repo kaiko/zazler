@@ -1,0 +1,62 @@
+{
+    "table": "w",
+    "format": "debug.json",
+    "user": null,
+    "pass": null,
+    "isMain": true,
+    "isPost": false,
+    "vars": {},
+    "cookie": {
+        "url": "/write1/w.debug.json"
+    },
+    "req": {
+        "table": "w",
+        "format": "debug.json",
+        "vars": {},
+        "user": null,
+        "pass": null,
+        "isMain": true,
+        "isPost": false,
+        "opts": {
+            "askpw": true,
+            "body": false,
+            "head": true,
+            "map": true,
+            "save": false,
+            "text": false,
+            "point": true,
+            "comma": false,
+            "distinct": false,
+            "transaction": false,
+            "schemaOnly": false
+        },
+        "cookie": {
+            "url": "/write1/w.debug.json"
+        }
+    },
+    "console": {},
+    "result": {
+        "data": [
+            {
+                "a": null,
+                "b": "ahaa",
+                "c": "always..."
+            }
+        ],
+        "cols": [
+            "a",
+            "b",
+            "c"
+        ],
+        "types": [
+            "str",
+            "str",
+            "str"
+        ],
+        "rawTypes": [
+            "text",
+            "text",
+            "text"
+        ]
+    }
+}
