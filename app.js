@@ -227,7 +227,8 @@ class App {
     [table, as] = breakOn(table, '@');
 
     if (!format) throw new Exception(301, new Error());
-    if (!sch.find(e => e._ === 'table' && e.name === table)) throw new Exception(302, new Error(), { table: table }); // TODO: look for joins
+    if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
+      throw new Exception(302, new Error(), { table: table }); // TODO: look for joins
 
     let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
 
@@ -688,8 +689,9 @@ class App {
         .filter(r => r._ === 'field' && r.read && tbIdx.has(r.table)) // only fields in this query
         .map(r => { let T = tbIdx.get(r.table); return Object.assign({}, r, { as: T.as, prio: T.prio}); }); // simplified object
     let schTables = Set.fromArray(schema.filter(t => t._ === 'table').map(t => t.name));
+    let specTables = Set.fromArray(['_empty','_schema','_single','_meta']);
 
-    let missingTables = tables.map(t => t.name).filter(t => !schTables.has(t));
+    let missingTables = tables.map(t => t.name).filter(t => !specTables.has(t)).filter(t => !schTables.has(t));
     if (missingTables.length) throw new Exception(302, new Error(), { table: missingTables.join(",") });
 
     // important to have this here, before sort
