@@ -18,6 +18,8 @@ Map.prototype.setWith = function (key, val, fn) {
   else this.set(key, val); 
 }
 
+Map.prototype.fromArray = (ls, key, valFn) => ls.reduce((m, i) => m.set(i[key], valFn ? valFn(i) : val), new Map())
+
 module.exports = {
   trace:  (v, mark) => { console.log(mark ? mark + '\n' + v + '\n/' + mark : v); return v; },
   breakOn : (str, on) => {

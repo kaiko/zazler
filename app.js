@@ -32,6 +32,7 @@ const exceptionRegister = {
 , 200: [ 'A' , "Use module express-form-data" ]
 , 300: [ 'R' , "Template not found" ]
 , 301: [ 'R' , "Format missing" ]
+, 302: [ 'R' , "Table missing" ]
 , 500: [ 'R' , "Running query on empty database (or didn't you `await` for newTable)" ]
 , 501: [ 'Aw', "Engine initialization error" ]
 , 502: [ 'Aw', "Engine script error" ]
@@ -226,8 +227,9 @@ class App {
     [table, as] = breakOn(table, '@');
 
     if (!format) throw new Exception(301, new Error());
+    if (!sch.find(e => e._ === 'table' && e.name === table)) throw new Exception(302, new Error(), { table: table }); // TODO: look for joins
 
-    let R = { table, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
+    let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
 
     R.opts = Object.assign({}, Opts.def, vars.opts ? Opts.parse(vars.opts) : {});
 
@@ -374,7 +376,7 @@ class App {
 
     let x ;
     try {
-      x = await this.request(req.path.split('/').pop(), vars, { url: req.originalUrl}, req.cookies, post, files, user, pass);
+      x = await this.request(req.path.split('/').pop(), vars, req.cookies, { url: req.originalUrl}, post, files, user, pass);
     } catch (e) {
       console.log(e);
       res.write(e.toString());
@@ -480,7 +482,8 @@ class App {
 
     let db = await this.conn.transaction();
 
-    await Promise.all(rowQ.map(async (Q,i) => { // do queries and get returning rows
+    // generate list of functions and execute them later in sync
+    let jobLs = rowQ.map((Q,i) => async () => { // do queries and get returning rows
       if (!Q) return;         // remove where are no match (don't filter to have array indexes 1:1 rules to input rows)
       let R = rowRule[i];
       let ret;
@@ -525,8 +528,8 @@ class App {
         })
       }));
 
-    }));
-
+    });
+    for (let j = 0; j < jobLs.length; j++) await jobLs[j]();
     await db.commit();
 
     let r;
@@ -684,6 +687,10 @@ class App {
     let seenFields = schema
         .filter(r => r._ === 'field' && r.read && tbIdx.has(r.table)) // only fields in this query
         .map(r => { let T = tbIdx.get(r.table); return Object.assign({}, r, { as: T.as, prio: T.prio}); }); // simplified object
+    let schTables = Set.fromArray(schema.filter(t => t._ === 'table').map(t => t.name));
+
+    let missingTables = tables.map(t => t.name).filter(t => !schTables.has(t));
+    if (missingTables.length) throw new Exception(302, new Error(), { table: missingTables.join(",") });
 
     // important to have this here, before sort
     if (!S.select) S = S.setSelect(seenFields.filter(f => !f.hide).map(f => (f.as || f.table) + '.' + f.name));
