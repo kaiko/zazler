@@ -53,43 +53,39 @@ function breakOn(str, on) {
 }
 
 
-function DbConn(props) {
+async function DbConn(props) {
   let c;
   switch (props.type.toLowerCase()) {
   case 'psql':
   case 'postgresql':
   case 'postgres':
-  case 'pg': c = new DbConnPg(props); break;
+  case 'pg': c = DbConnPg(props); break;
   case 'maria':
   case 'mariadb':
   case 'mysql':
-  case 'my': c = new DbConnMy(props); break;
+  case 'my': c = await DbConnMy(props); break;
   case 'file':
   case 'sqlite':
-  case 'lt': c = new DbConnLt(props); break;
+  case 'lt': c = await DbConnLt(props); break;
   default: throw "Connection props must have `type` property with value 'sqlite', 'pg' or 'mysql'";
   }
   return c;
 }
-DbConn.prototype = { }
 
 function DbConnPg(props) {
-  this.pg = require('pg');
+  let pg = require('pg');
 
   // numbers must be handled as numbers, not strings
-  this.pg.types.setTypeParser(20, parseInt);
-  this.pg.types.setTypeParser(21, parseInt);
-  this.pg.types.setTypeParser(23, parseInt);
-  this.pg.types.setTypeParser(26, parseInt);
-  this.pg.types.setTypeParser(701, parseFloat);
-  this.pg.types.setTypeParser(700, parseFloat);
+  pg.types.setTypeParser(20, parseInt);
+  pg.types.setTypeParser(21, parseInt);
+  pg.types.setTypeParser(23, parseInt);
+  pg.types.setTypeParser(26, parseInt);
+  pg.types.setTypeParser(701, parseFloat);
+  pg.types.setTypeParser(700, parseFloat);
 
-  this.pool = new this.pg.Pool(props);
-  this._schema = null;
-  this.props = props;
+  return Object.create(DbConnPg.prototype, { pg: { value: pg }, props: { value: props }, pool: { value: new this.pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
 }
 DbConnPg.prototype = {
-  prototype: DbConn.prototype,
   // end:   async function () { return null; /* await this.pool.end() */ },
   query: async function (q) {
     const client = await this.pool.connect();
@@ -272,14 +268,11 @@ DbConnPg.queryConstraints =
       " AND ns.nspname !~ '^pg_toast'" + +
       " AND pg_catalog.pg_table_is_visible(cl.oid)";
 
-function DbConnMy(props) {
+async function DbConnMy(props) {
   var my = require('mysql');
-  this.props = props;
-  this.pool  = my.createPool(props)
-  this._schema = null;
+  return Object.create(DbConnMy.prototype, { props: { value: props }, pool: { value: my.createPool(props) } , _schema: { value: null, configurable: true, enumerable: true, writable: true } })
 }
 DbConnMy.prototype = {
-  prototype: DbConn.prototype,
   // end:   async function () { await this.client.end() },
   query: function (q) {
     return new Promise((return_, onErr) => this.pool.query(q, (err, res, fields) => {
@@ -365,16 +358,14 @@ DbConnMy.types = {
 , [0xff]: [ 'geometry'  , 'str']       // MYSQL_TYPE_GEOMETRY       0xff   
 }
 
-function DbConnLt(props) {
-  this.conn = Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
-  this.props = props;
-  this._schema = null;
+async function DbConnLt(props) {
+  let conn = await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
+  return Object.create(DbConnLt.prototype, { props: { value: props }, conn: { value: conn }, _schema: { value: null, writable: true, enumerable: true, configurable: true } });
 }
 DbConnLt.prototype = {
-  prototype: DbConn.prototype,
   // end:   async function () { await this.client.end() },
   query: async function (q, cli) {
-      const client = cli ? cli : await this.conn;
+      const client = cli ? cli : this.conn;
       let R = await client.all(q);
       let cols = R.length ? Object.keys(R[0]) : {};
       let types = new Array(cols.length);
@@ -395,8 +386,8 @@ DbConnLt.prototype = {
       return { data: R, cols: R.length === 0 ? [] : Object.keys(R[0]), types: typesGen, rawTypes: types };
   },
   transaction: async function () {
-    const client = await Lite.open(this.props.filename || ':memory:', { Promise });
-    await client.run('BEGIN');
+    const client = this.conn;  // await Lite.open(this.props.filename || ':memory:', { Promise });
+    // await client.run('BEGIN'); // FIXME: how to do transactions in :memory:
     return {
       query:  sql => client.query(sql)
     , exec:  async (sql) => { // TODO error handling and rollback
@@ -404,8 +395,8 @@ DbConnLt.prototype = {
         return changes;
       }
     , commit: async ()  => {
-        await client.run('COMMIT');
-        await client.close();
+        // await client.run('COMMIT');
+        // await client.close();
       }
     }
   },
@@ -414,7 +405,7 @@ DbConnLt.prototype = {
     return this._schema;
   },
   learn: async function () {
-    const client = await this.conn;
+    const client = this.conn;
     let tables = await client.all(DbConnLt.queryTables);
     let fields = [];
     let base = { read: false, write: false, hidden: false, prot: false };

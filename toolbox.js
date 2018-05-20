@@ -10,6 +10,7 @@ Object.onValuesA = async function (o, fn) {
   return (await Promise.all(K.map((k, i) => fn(o[k], k, i)))).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
 }
 if (!Object.values) Object.values = o => Object.keys(o).map(k => o[k]);
+Object.map = Object.onValues;
 
 Set.fromArray = a => a.reduce((s, e) => s.add(e), new Set());
 

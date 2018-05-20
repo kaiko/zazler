@@ -63,59 +63,62 @@ class Exception {
 
 /////////////
 
-class App {
-  constructor(conn, conf = null) {
-    if (typeof conn === 'string') conn = urlToConnection(conn);
-    this.dbName = undefined;
-    this.dbSchema = null;
-    this.type = conn.type;
-    this.sqlType = ({pg: SqlPg, lt: SqlLt, my: SqlMy})[conn.type];
-    this.dbName = conf.dbName;
+async function App(conn, conf) {
+  
+  if (typeof conn === 'string') conn = urlToConnection(conn);
 
-    // if (!conn.internal) // just small speedup for some cases
-    this.lite = new DbConn({ filename: ':memory:', type: 'lt' });
-    this.conn = new DbConn(conn);
-    this.driverName = conn.type; // DriverName :: !String
+  let app = Object.create(AppPrototype, 
+  { dbName     : { value: conf.dbName }
+  // , dbSchema   : { value: null } // ment to be pg schema but it is not used
+  , type       : { value: conn.type }
+  , sqlType    : { value: ({pg: SqlPg, lt: SqlLt, my: SqlMy})[conn.type] }
+  , driverName : { value: conn.type   }  // DriverName :: !String
 
-    this.engines  = {};
+  , lite       : { value: await DbConn({ filename: ':memory:', type: 'lt' }) }
+  , conn       : { value: await DbConn(conn) }
 
-    // You can get these from connection but I wanted to have these values available without using any connection
+  , engines    : { value: {}, writable: true }
+  , export     : { value: {}, writable: true }
+  , sqlFn      : { value: {}, writable: true }
+  , pipes      : { value: {}, writable: true }
+
+  , emptyResult : { value: { data: [], cols: [], types: [], rawTypes: [], rowsTotal: () => 0 } }
+
+  , events   : { value: { onWebRequest: [], onPost: [], onAfterUpload: [],  onSql: [], onError: [] /*, onAfterPost: [], onUpload: [], onEvGet: [] */ } }
+  , eventMap : { value: {
+      "web-request" : "onWebRequest"
+    , "data-post"   : "onPost"
+    , "upload-after": "onAfterUpload"
+    , "error"       : "onError"
+    , "sql"         : "onSql"
+  } }
+  , logAccess: { value: () => {}, writable: true }
+
+  , block : { value: Promise.resolve(true), writable: true }
+  , _schema: { value: null, writable: true }
 
 
-    // this.events = {}; // ![(CtrlEvent, JSVal {- [Value] -> IO Value -} )]
-    this.export = {};
-    this.sqlFn  = {};
-    this.pipes  = {};
+  })
+  app.expressRequest = AppPrototype.expressRequest.bind(app);
+  app.format         = AppPrototype.format.bind(app);
+  app.runSelect      = AppPrototype.runSelect.bind(app);
 
-    this.expressRequest = this.expressRequest.bind(this);
-    this.format    = this.format.bind(this);
-    this.runSelect = this.runSelect.bind(this);
+  // You can get these from connection but I wanted to have these values available without using any connection
 
-    this.emptyResult = { data: [], cols: [], types: [], rawTypes: [], rowsTotal: () => 0 }
+  if (conf.logAccess) fs.open(conf.logAccess, 'a', (err, f) => app.logAccess = m => fs.write(f, m.url + "\n", () =>{} ))
+  if (conf.logSql   ) fs.open(conf.logSql   , 'a', (err, f) => app.on('sql'  , e => fs.write(f, '[' + new Date().toString() + '] ' + e.sql + "\n", () => {} )));
+  if (conf.logError ) fs.open(conf.logError , 'a', (err, f) => app.on('error', e => fs.write(f, '[' + new Date().toString() + '] ' + e.toString()  +'\n' , () => {} )));
 
-    this.events = { onWebRequest: [], onPost: [], onAfterUpload: [],  onSql: [], onError: [] /*, onAfterPost: [], onUpload: [], onEvGet: [] */ };
-    this.eventMap = {
-        "web-request" : "onWebRequest"
-      , "data-post"   : "onPost"
-      , "upload-after": "onAfterUpload"
-      , "error"       : "onError"
-      , "sql"         : "onSql"
-    }
+  await app.setConf(conf);
+  await app.updateSchema();
+  return app;
+}
 
-    this.logAccess = () => {}
-    if (conf.logAccess) fs.open(conf.logAccess, 'a', (err, f) => this.logAccess = m => fs.write(f, m.url + "\n", () =>{} ))
-    if (conf.logSql   ) fs.open(conf.logSql   , 'a', (err, f) => this.on('sql'  , e => fs.write(f, '[' + new Date().toString() + '] ' + e.sql + "\n", () => {} )));
-    if (conf.logError ) fs.open(conf.logError , 'a', (err, f) => this.on('error', e => fs.write(f, '[' + new Date().toString() + '] ' + e.toString()  +'\n' , () => {} )));
+AppPrototype = {
+  evSql:   function (e) { this.events.onSql  .forEach(fn => fn(e)); },
+  evError: function (e) { this.events.onError.forEach(fn => fn(e)); },
 
-    if (conf) this.setConf(conf);
-
-    this.block = Promise.resolve(true);
-  }
-
-  evSql(e)   { this.events.onSql.forEach(fn => fn(e)); }
-  evError(e) { this.events.onError.forEach(fn => fn(e)); }
-
-  setConf(conf) {
+  setConf: async function (conf) {
     this.index = conf.index || '_schema.dashboard';
 
     this.varsWithout$  = conf.hasOwnProperty('varsWithout$' ) ? !!conf.varsWithout$  : false;
@@ -125,7 +128,7 @@ class App {
     if (typeof conf.parsers   === 'string') conf.parsers   = [conf.parsers  ];
     this.tmplDirs = [... (conf.templates || []), __dirname + '/templates/'];
     this.prsDirs  = [... (conf.parsers   || []), __dirname + '/parsers/'  ];
-    this.addEngine("mt.html", __dirname + "/engines/microtemplate.js");
+    await this.addEngine("mt.html", __dirname + "/engines/microtemplate.js");
 
     this.read  = new AccessRule(conf.read);
     this.write = new AccessRule(conf.write);
@@ -165,11 +168,11 @@ class App {
       if ( f) this.metaF[t][f] = v;
     });
 
-  }
+  },
 
-  meta(t, f = null) { return f ? (this.metaF[t]||{})[f] || null : this.metaT[t] || null; }
+  meta: function (t, f = null) { return f ? (this.metaF[t]||{})[f] || null : this.metaT[t] || null; },
 
-  async query(tableAs, vars, user, pass) {
+  query: async function(tableAs, vars, user, pass) {
 
     let [tq, fmt] = breakOn(tableAs, '.');
     let [table, as] = breakOn(tq, '@');
@@ -208,12 +211,12 @@ class App {
       if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
       else { this.evError(someErr); throw someErr; }
     }
-  }
+  },
 
   // returns { headers: [ {key: val }], text: return content, code: 200 }
   // code can be "unauthorized" (401)
   // if error/exception emerges it is thrown
-  async request(tableFormat, vars, cookies = {}, extra = {}, post = null, files = null, user = null, pass = null) {
+  request: async function (tableFormat, vars, cookies = {}, extra = {}, post = null, files = null, user = null, pass = null) {
     
     await this.block; // wait till schema is learned at the beginning
 
@@ -335,9 +338,9 @@ class App {
           : await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: cookies}}, { vars: R.vars }))
       }
     }
-  }
+  },
 
-  async expressRequest(req, res, next) {
+  expressRequest: async function (req, res, next) {
     req.setEncoding('utf8');
 
     this.logAccess(req);
@@ -392,15 +395,15 @@ class App {
     res.end();
 
     next();
-  }
+  },
 
-  on(ev, fn) {
+  on: function (ev, fn) {
     if (!this.eventMap[ev]) throw new Exception(110, new Error(), { unknownEvent: ev, allowedEvents: Object.keys(this.eventMap) });
     this.events[this.eventMap[ev]].push(fn);
-  }
+  },
 
    // yeah, schema is in 'this' but on auth there is modified schema used 
-  async runSelect(table, as, vars, meta, sch, filt, dreq = {opts:{}}) { // FIXME: when is dreq missing?
+  runSelect: async function (table, as, vars, meta, sch, filt = [], dreq = {opts:{}}) { // FIXME: when is dreq missing?
     if (!meta) meta = this.meta;
 
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
@@ -442,8 +445,8 @@ class App {
       return parseInt((await cn.query(csql)).data[0].count, 10);
     }
     return res;
-  }
-  async runPost(table, initVars, req, meta, sch, irows, dreq, files) {
+  },
+  runPost: async function (table, initVars, req, meta, sch, irows, dreq, files) {
     let me = this, results = [], affected = [], rules;
     files = files || {};
 
@@ -540,9 +543,9 @@ class App {
       ? Object.assign({}, results[0], { data: results.reduce((R,r) => R.concat(r.data), []) })
       : this.emptyResult,
       { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
-  }
+  },
 
-  async format(queryResult, format, table, tableAs, vars, req, meta, sch) {
+  format: async function (queryResult, format, table, tableAs, vars, req, meta, sch) {
     let F = await this.findTemplate(format);
     let me = this, result = {
       out: '',
@@ -596,13 +599,13 @@ class App {
         }));
     })
     .then(() => result).catch(e => { this.evError(e); result.error = e; return result; });
-  }
+  },
 
-  templNewDb() {
+  templNewDb: async function () {
     let conf = { read : '*', templates: this.tmplDirs, parsers: this.prsDirs, varsWithout$: this.varsWithout$, inlineStrings: this.inlineStrings };
-    let a = new App({type: 'lt'}, conf);
+    let a = await App({type: 'lt'}, conf);
     a.engines = this.engines;
-    return Object.create({}, {
+    return Object.create(Object.prototype, {
       newTable: { value: async function (name, rows) {
         let names = [];
         rows.forEach(r => Object.keys(r).forEach(n => { if (!names.includes(n)) names.push(n) }));
@@ -614,18 +617,19 @@ class App {
         await db.commit();
         await a.updateSchema()
       } },
-      query: { value: async (tf, vars = {}) => {
+      query: { value: async function (tf, vars = {}) {
         if (!a._schema) await a.schema();
         if (!a._schema) throw new Exception(500, new Error());
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
-        let qRes = await a.runSelect(t, as, vars, this.meta, this.schema, this.filt, {});
-        return !fmt ? qRes : (await a.format(qRes, fmt, table, as, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, await a.schema() )).text();
+        const sch = await a.schema();
+        let qRes = await a.runSelect(t, as, vars, a.meta, sch, a.filt, {});
+        return !fmt ? qRes : (await a.format(qRes, fmt, table, as, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, sch )).text();
       } }
     })
-  }
+  },
 
-  async findTemplate(fmt) {
+  findTemplate: async function (fmt) {
     let ls = [], dirs = this.tmplDirs;
     let rd = util.promisify(fs.readdir);
     let rf = util.promisify(fs.readFile);
@@ -656,20 +660,20 @@ class App {
     }
 
     throw new Exception(300, new Error(), { template: fmt }) 
-  }
+  },
 
   // vars from conf, user defined vars from url and constants (can't be overwritten)
-  combineVars(table, vars) {
+  combineVars: function (table, vars) {
     let V = {};
     this.vars  .filter(v => wildcard(v.table, table)).forEach( tv => Object.assign(V, tv) ); // NOTE: "table" is ignored (not removed)
     Object.assign(V, vars);
     this.consts.filter(v => wildcard(v.table, table)).forEach( tv => Object.assign(V, tv) );
     delete V.table;
     return V
-  }
+  },
 
   // TODO: this must be part of query
-  async fillSelect(S, vars, meta, schema = null, dreq={opts:{}}) {
+  fillSelect: async function (S, vars, meta, schema = null, dreq={opts:{}}) {
 
     // ?select=x&let.x=1 gives `SELECT 1 AS x`
     S = S.mapSelect(el => (el.token && vars['let.' + el.token]) ? el.toAs(el.token) : el);
@@ -742,24 +746,24 @@ class App {
     });
 
     return S;
-  }
+  },
 
-  async updateSchema() {
+  updateSchema: async function () {
     await this.block;
     this.block = new Promise( ub => this.unblock = ub ) ;
     this._schema = null;
     await this.schema();
     this.unblock();
     return true;
-  }
+  },
 
-  setSqlFn (sqlFn) {
+  setSqlFn: function (sqlFn) {
     this.sqlFn = sqlFn;
-  }
-  setExport (exp) {
+  },
+  setExport: function (exp) {
     this.export = exp;
-  }
-  async addEngine(ext, filepath) {
+  },
+  addEngine: async function (ext, filepath) {
     try {
       this.engines[ext] = { ext: ext, filepath: filepath, script: await util.promisify(fs.readFile)(filepath, 'utf8') };
     } catch (e) { 
@@ -772,14 +776,11 @@ class App {
       this.evError(e);
       throw new Exception(502, e, { ext: ext, filepath: filepath });
     }
-  }
-  addPipe(ext, fn) {
+  },
+  addPipe: function (ext, fn) {
     this.pipes[ext] = fn;
-  }
-  async updSchema() {
-    return await this.conn.schema();
-  }
-  async schema() {
+  },
+  schema: async function () {
     if (!this._schema) {
       await this.conn.learn();
       let dbSch = await this.conn.schema();
@@ -860,11 +861,7 @@ async function inputRows(dirs, fmt, body) {
 }
 
 
-module.exports = async (con,conf) => {
-  let a = new App(con, conf);
-  await a.updateSchema();
-  return a;
-}
+module.exports = App;
 
 // used to throw new NeedAuth()
 function NeedAuth() { }
