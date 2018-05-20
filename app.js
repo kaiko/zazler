@@ -31,7 +31,6 @@ const exceptionRegister = {
 , 110: [ ''  , "Unknown event" ]
 , 200: [ 'A' , "Use module express-form-data" ]
 , 300: [ 'R' , "Template not found" ]
-, 301: [ 'R' , "Format missing" ]
 , 302: [ 'R' , "Table missing" ]
 , 500: [ 'R' , "Running query on empty database (or didn't you `await` for newTable)" ]
 , 501: [ 'Aw', "Engine initialization error" ]
@@ -229,7 +228,7 @@ AppPrototype = {
     if (!table) [table, format] = breakOn(this.index, '.');
     [table, as] = breakOn(table, '@');
 
-    if (!format) throw new Exception(301, new Error());
+    if (!format) throw new Exception(300, new Error(), { template: template, templateDirs: this.tmplDirs });
     if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
       throw new Exception(302, new Error(), { table: table }); // TODO: look for joins
 
@@ -382,7 +381,7 @@ AppPrototype = {
     try {
       x = await this.request(req.path.split('/').pop(), vars, req.cookies, { url: req.originalUrl}, post, files, user, pass);
     } catch (e) {
-      console.log(e);
+      console.error(e.isWrapper ? e.err : e);
       res.write(e.toString());
       res.end();
       next();
@@ -659,7 +658,7 @@ AppPrototype = {
       return { ctx: {}, script: new VM.Script('(async function () { \n try { ' + script + '\n__success__(); } catch (E) { __failure__(E); } })()') };
     }
 
-    throw new Exception(300, new Error(), { template: fmt }) 
+    throw new Exception(300, new Error(), { template: fmt, templateDirs: this.tmplDirs }) 
   },
 
   // vars from conf, user defined vars from url and constants (can't be overwritten)
