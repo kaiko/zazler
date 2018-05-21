@@ -83,7 +83,7 @@ function DbConnPg(props) {
   pg.types.setTypeParser(701, parseFloat);
   pg.types.setTypeParser(700, parseFloat);
 
-  return Object.create(DbConnPg.prototype, { pg: { value: pg }, props: { value: props }, pool: { value: new this.pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
+  return Object.create(DbConnPg.prototype, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
 }
 DbConnPg.prototype = {
   // end:   async function () { return null; /* await this.pool.end() */ },
