@@ -229,8 +229,8 @@ AppPrototype = {
     [table, as] = breakOn(table, '@');
 
     if (!format) throw new Exception(300, new Error(), { template: template, templateDirs: this.tmplDirs });
-    if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
-      throw new Exception(302, new Error(), { table: table }); // TODO: look for joins
+    //if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
+    //  throw new Exception(302, new Error(), { table: table }); // TODO: look for joins and alias
 
     let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
 
@@ -695,7 +695,7 @@ AppPrototype = {
     let specTables = Set.fromArray(['_empty','_schema','_single','_meta']);
 
     let missingTables = tables.map(t => t.name).filter(t => !specTables.has(t)).filter(t => !schTables.has(t));
-    if (missingTables.length) throw new Exception(302, new Error(), { table: missingTables.join(",") });
+    // if (missingTables.length) throw new Exception(302, new Error(), { table: missingTables.join(",") }); // TODO: alias
 
     // important to have this here, before sort
     if (!S.select) S = S.setSelect(seenFields.filter(f => !f.hide).map(f => (f.as || f.table) + '.' + f.name));
