@@ -156,7 +156,7 @@ AppPrototype = {
 
     this.metaF = {};
     this.metaT = {};
-    Object.map(conf.meta || {}, (k, v) => {
+    Object.map(conf.meta || {}, (v, k) => {
       let [t,f] = breakOn(k, '.');
       if (!f && !this.metaT[t]) this.metaT[t] = {};
       if (f) {
