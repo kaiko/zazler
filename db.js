@@ -1,6 +1,8 @@
 const url = require('url');
 const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
 const Lite3 = require('sqlite3');
+const {promisify} = require('util');
+const { breakOn, zipObject } = require('./toolbox.js');
 
 function urlToConnection(dbUrl) {
   let u = url.parse(dbUrl);
@@ -43,14 +45,28 @@ function urlToConnection(dbUrl) {
       u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
       .forEach(([k,v]) => { if (!c[k]) c[k] = v })
     return c;
-  } else throw "Unknown protocol: " + u.protocol;
+  } else
+  if (['oracle:'].includes(u.protocol)) {
+    let c = {
+      type: 'or'
+    , port: parseInt(u.port || 1521) 
+    , host: u.hostname
+    , database: u.pathname ? u.pathname.split('/')[1] : ''
+    }
+    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
+
+    if (u.query) // yeah yeah URLSearchParams
+      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
+      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+
+    c.connectString = c.host + ':' + c.port + '/' + c.database;
+
+    return c;
+  }
+  else throw "Unknown protocol: " + u.protocol;
   return u;
 }
 
-function breakOn(str, on) {
-  let pos = str.indexOf(on);
-  return pos === -1 ? [str] : [str.substr(0,pos), str.substr(pos+1) ];
-}
 
 
 async function DbConn(props) {
@@ -59,7 +75,7 @@ async function DbConn(props) {
   case 'psql':
   case 'postgresql':
   case 'postgres':
-  case 'pg': c = DbConnPg(props); break;
+  case 'pg': c = await DbConnPg(props); break;
   case 'maria':
   case 'mariadb':
   case 'mysql':
@@ -67,13 +83,14 @@ async function DbConn(props) {
   case 'file':
   case 'sqlite':
   case 'lt': c = await DbConnLt(props); break;
-  default: throw "Connection props must have `type` property with value 'sqlite', 'pg' or 'mysql'";
+  case 'or': c = await DbConnOr(props); break;
+  default: throw new Error("Connection props must have `type` property with value 'sqlite', 'pg', 'mysql' or 'or' (for Oracle)");
   }
   return c;
 }
 
-function DbConnPg(props) {
-  let pg = require('pg');
+async function DbConnPg(props) {
+  const pg = require('pg');
 
   // numbers must be handled as numbers, not strings
   pg.types.setTypeParser(20, parseInt);
@@ -83,18 +100,18 @@ function DbConnPg(props) {
   pg.types.setTypeParser(701, parseFloat);
   pg.types.setTypeParser(700, parseFloat);
 
-  return Object.create(DbConnPg.prototype, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
+  return Object.create(DbConnPg.Proto, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
 }
-DbConnPg.prototype = {
+DbConnPg.Proto = {
   // end:   async function () { return null; /* await this.pool.end() */ },
-  query: async function (q) {
+  query: async function (q, args = []) {
     const client = await this.pool.connect();
-    let res = this.runQ(q, client);
+    let res = this.runQ(q, args, client);
     client.release();
     return res;
   },
-  runQ: async function (q, client) {
-    const R = await client.query(q);
+  runQ: async function (q, args = [], client) {
+    const R = await client.query(q, args);
     let r = R.rows;
     let o = R.fields.map(f => f.name);
     let t = R.fields.map(f => {
@@ -111,10 +128,10 @@ DbConnPg.prototype = {
     await client.query('BEGIN');
     return {
       commit: async () => { await client.query('COMMIT'); client.release(); }, // TODO: why I get error message releasing connection (already released)
-      query:  sql => this.runQ(sql, client),
-      exec:   async sql => {
+      query:  (sql,args = []) => this.runQ(sql, args, client),
+      exec:   async (sql, args = []) => {
         try {
-          let { rowCount } = await client.query(sql);
+          let { rowCount } = await client.query(sql, args);
           return rowCount;
         } catch (SQLE) {
           await client.query('ROLLBACK');
@@ -269,13 +286,13 @@ DbConnPg.queryConstraints =
       " AND pg_catalog.pg_table_is_visible(cl.oid)";
 
 async function DbConnMy(props) {
-  var my = require('mysql');
-  return Object.create(DbConnMy.prototype, { props: { value: props }, pool: { value: my.createPool(props) } , _schema: { value: null, configurable: true, enumerable: true, writable: true } })
+  const my = require('mysql');
+  return Object.create(DbConnMy.Proto, { props: { value: props }, pool: { value: my.createPool(props) } , _schema: { value: null, configurable: true, enumerable: true, writable: true } })
 }
-DbConnMy.prototype = {
+DbConnMy.Proto = {
   // end:   async function () { await this.client.end() },
-  query: function (q) {
-    return new Promise((return_, onErr) => this.pool.query(q, (err, res, fields) => {
+  query: function (q, args = []) {
+    return new Promise((return_, onErr) => this.pool.query(q, args, (err, res, fields) => {
       if (err) { onErr( err); return; }
       let t = fields.map(f => DbConnMy.types[f.type] || ['str','str']);
       return_({ data: res, cols: fields.map(f => f.name), types: t.map(t => t[1]), rawTypes: t.map(t => t[0]) })
@@ -285,17 +302,17 @@ DbConnMy.prototype = {
   transaction: function () { return new Promise((return_, throw_) => {
     this.pool.getConnection((err, client) =>  {
       if (err) { throw_(err); return; }
-      client.query('begin', err => {
+      client.query('BEGIN', err => {
         if (err) { throw_(err); return; }
         return_({
-          commit: () => { client.query('commit', () => client.release() ) }
-        , query: sql => {
-            return new Promise(ok => client.query(sql, (err,res,fld) => ok({ data: res, cols: fld.map(f => f.Field), types: fields.map(f => f.Type), rawTypes: fields.map(f => f.Type) })));
+          commit: () => { client.query('COMMIT', () => client.release() ) }
+        , query: (sql, args = []) => {
+            return new Promise(ok => client.query(sql, args, (err,res,fld) => ok({ data: res, cols: fld.map(f => f.Field), types: fields.map(f => f.Type), rawTypes: fields.map(f => f.Type) })));
         }
-        , exec : sql => {
+        , exec : (sql, args = []) => {
             let ok, nok, P;
             P = new Promise((ok_,nok_) => { ok = ok_, nok = nok_; });
-            client.query(sql, (err,res,fld) => {
+            client.query(sql, args, (err,res,fld) => {
               if (err) nok(err); // TODO rollback, close
               else ok(res.affectedRows)
             });
@@ -359,14 +376,13 @@ DbConnMy.types = {
 }
 
 async function DbConnLt(props) {
-  let conn = await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
-  return Object.create(DbConnLt.prototype, { props: { value: props }, conn: { value: conn }, _schema: { value: null, writable: true, enumerable: true, configurable: true } });
+  return Object.create(DbConnLt.Proto, { conn: { value: await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE })}, _schema: { value: null, writable: true, enumerable: true, configurable: true } });
 }
-DbConnLt.prototype = {
+DbConnLt.Proto = {
   // end:   async function () { await this.client.end() },
-  query: async function (q, cli) {
-      const client = cli ? cli : this.conn;
-      let R = await client.all(q);
+  query: async function (q, args = []) {
+      const client = this.conn;
+      let R = await client.all(q, args);
       let cols = R.length ? Object.keys(R[0]) : {};
       let types = new Array(cols.length);
       let unknown = cols.length;
@@ -389,9 +405,9 @@ DbConnLt.prototype = {
     const client = this.conn;  // await Lite.open(this.props.filename || ':memory:', { Promise });
     // await client.run('BEGIN'); // FIXME: how to do transactions in :memory:
     return {
-      query:  sql => client.query(sql)
-    , exec:  async (sql) => { // TODO error handling and rollback
-        let {changes, lastID} = await client.run(sql);
+      query: (sql, args = []) => client.query(sql, args)
+    , exec:  async (sql, args = []) => { // TODO error handling and rollback
+        let {changes, lastID} = await client.run(sql, args);
         return changes;
       }
     , commit: async ()  => {
@@ -420,5 +436,50 @@ DbConnLt.queryTables = "SELECT name FROM sqlite_master WHERE type IN ('table', '
 DbConnLt.queryFields = t => "PRAGMA table_info('" + t + "')"; // FIXME: escape
 DbConnLt.queryConstr = t => "PRAGMA foreign_key_list('" + t + "')";
 
-module.exports.DbConn = DbConn;
-module.exports.urlToConnection = urlToConnection;
+
+async function DbConnOr(props) {
+  const oracledb = require('oracledb');
+  oracledb.autoCommit = false;
+
+  return new Promise((onSucc, onFail) => {
+    oracledb.getConnection(props, (err, conn) => {
+      let x;
+      if (err) onFail(err);
+      else onSucc( Object.create(DbConnOr.Proto, { conn: { value: conn }, props: { value: props }, _schema: { value: null, writable: true } }) );
+    })
+  })
+}
+DbConnOr.Proto = {
+  // end:   async function () { await this.client.end() },
+  query: async function (q, args = []) {
+      let R = await promisify(this.conn.execute)(q, args, { extendedMetaData: true }); // TODO: oracle types
+      let cols = R.metaData.map(f => f.name);
+      return { data: R.map(r => zipObject(cols, r.map(c => c.toString()) )), cols , types: cols.map(c => 'str'), rawTypes: cols.map(c => 'unknown') };
+  },
+  transaction: async function () {
+    const client = this.conn;
+    await client.execute('BEGIN');
+    return {
+      query: (sql, args = []) => client.execute(sql, args)
+    , exec:   async (sql, args = []) => (await client.execute(sql, args)).rowsAffected // TODO error handling and rollback
+    , commit: async () => await client.execute('COMMIT')
+    }
+  },
+  schema: async function () {
+    if (!this._schema) await this.learn();
+    return this._schema;
+  },
+  learn: async function () {
+    const client = this.conn;
+    let sch = [], curTable = '', base = { read: false, write: false, hidden: false, prot: false };
+    (await client.execute(DbConnOr.queryFields)).rows.forEach(([tname, cname, dtype, dlen]) => {
+      if (curTable != tname)
+      sch.push(Object.assign({_: 'table', comment: '', name:  tname }, base));
+      sch.push(Object.assign({_: 'field', comment: '', table: tname, name: cname, type: dtype, genType: 'str', autonum: false }, base)); // FIXME genType
+    });
+    this._schema = sch;
+  }
+};
+DbConnOr.queryFields = "SELECT table_name, column_name, data_type, data_length FROM USER_TAB_COLUMNS";
+
+module.exports = { urlToConnection, DbConn }
