@@ -1,4 +1,5 @@
 {
+    "url": "/simple-schema/_schema.debug.json",
     "table": "_schema",
     "format": "debug.json",
     "user": null,
@@ -6,13 +7,12 @@
     "isMain": true,
     "isPost": false,
     "vars": {},
-    "cookie": {
-        "url": "/simple-schema/_schema.debug.json"
-    },
+    "cookie": {},
     "req": {
         "table": "_schema",
         "format": "debug.json",
         "vars": {},
+        "url": "/simple-schema/_schema.debug.json",
         "user": null,
         "pass": null,
         "isMain": true,
@@ -30,9 +30,7 @@
             "transaction": false,
             "schemaOnly": false
         },
-        "cookie": {
-            "url": "/simple-schema/_schema.debug.json"
-        }
+        "cookie": {}
     },
     "console": {},
     "result": {

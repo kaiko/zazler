@@ -181,7 +181,7 @@ AppPrototype = {
     let _auth = null;
     R.meta = {
       cookie: async () => ({})
-    , req:    async () => Object.onValues(R.req, jsToQVal)
+    , req:    async () => Object.map(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
             if (!me.auth) throw new Exception(104, new Error());
@@ -215,7 +215,7 @@ AppPrototype = {
   // returns { headers: [ {key: val }], text: return content, code: 200 }
   // code can be "unauthorized" (401)
   // if error/exception emerges it is thrown
-  request: async function (tableFormat, vars, cookies = {}, extra = {}, post = null, files = null, user = null, pass = null) {
+  request: async function (tableFormat, vars, extra = {}, cookies = {}, post = null, files = null, user = null, pass = null) {
     
     await this.block; // wait till schema is learned at the beginning
 
@@ -224,8 +224,7 @@ AppPrototype = {
 
     let table, as, format;
 
-    [table, format] = breakOn(tableFormat, '.');
-    if (!table) [table, format] = breakOn(this.index, '.');
+    [table, format] = breakOn(tableFormat || this.index, '.');
     [table, as] = breakOn(table, '@');
 
     if (!format) throw new Exception(300, new Error(), { template: template, templateDirs: this.tmplDirs });
@@ -251,8 +250,8 @@ AppPrototype = {
 
     let _auth = null, _cookie = null, _req = null;
     R.meta = {
-      cookie: async () => { if (!_cookie) _cookie = Object.onValues(cookies||{}, jsToQVal); return _cookie; }
-    , req:    async () => Object.onValues(R.req, jsToQVal)
+      cookie: async () => { if (!_cookie) _cookie = Object.map(cookies||{}, jsToQVal); return _cookie; }
+    , req:    async () => Object.map(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
             if (!me.auth) throw new Exception(104, new Error());
@@ -379,7 +378,7 @@ AppPrototype = {
 
     let x ;
     try {
-      x = await this.request(req.path.split('/').pop(), vars, req.cookies, { url: req.originalUrl}, post, files, user, pass);
+      x = await this.request(req.path.split('/').pop(), vars, { url: req.originalUrl }, req.cookies, post, files, user, pass);
     } catch (e) {
       console.error(e.isWrapper ? e.err : e);
       res.write(e.toString());
@@ -464,7 +463,7 @@ AppPrototype = {
     let arg = Object.assign({}, req,
     { tableAs: as
     , vars: vars
-    , post: Object.keys(files).length === 0 ? irows : irows.map(r => Object.assign({}, r, Object.onValues(files, f => f.path)))
+    , post: Object.keys(files).length === 0 ? irows : irows.map(r => Object.assign({}, r, Object.map(files, f => f.path)))
     });
     this.events.onPost.reduce((ev, fn) => fn(ev), arg);
     irows = arg.post; // f.path should be updaded file name in browser
@@ -545,6 +544,7 @@ AppPrototype = {
   },
 
   format: async function (queryResult, format, table, tableAs, vars, req, meta, sch) {
+
     let F = await this.findTemplate(format);
     let me = this, result = {
       out: '',
@@ -557,8 +557,8 @@ AppPrototype = {
       }
     }; // this is returned
 
-    let evArg = Object.assign(req,
-        { req: Object.assign({table, tableAs, format, vars}, req)
+    let evArg = Object.assign({}, req,
+        { req: Object.assign({}, {table, tableAs, format, vars}, req)
         , vars: vars
         , auth: async () => { try { return await meta.auth(); } catch (e) { if (e instanceof NeedAuth) return null; else throw e; } }
         , newDb: this.templNewDb.bind(this)
@@ -586,7 +586,7 @@ AppPrototype = {
 
     return new Promise((ok, bad) => {
       F.script.runInNewContext(Object.assign({}, evArg, F.ctx
-        , Object.onValues(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } )
+        , Object.map(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } )
         , { console: console
         ,   result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
         ,   contentType: (t,c) => result.contentType = t

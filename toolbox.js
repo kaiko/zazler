@@ -1,17 +1,8 @@
 
 
-Object.map = (o, fn) => Object.keys(o).map((k, i) => fn(k, o[k], i));
-Object.onValues = function (o, fn) {
-  let K = Object.keys(o);
-  return K.map((k, i) => fn(o[k], k, i)).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
-Object.onValuesA = async function (o, fn) {
-  let K = Object.keys(o);
-  return (await Promise.all(K.map((k, i) => fn(o[k], k, i)))).reduce((O, o, i) => Object.assign(O, { [ K[i] ]: o }), {});
-}
 if (!Object.values) Object.values = o => Object.keys(o).map(k => o[k]);
-Object.map = Object.onValues;
-
+Object.map  =       (o, fn) => { let i = 0, r = {}; for (let k in o) r[k] =       fn(o[k], k, i++); return r; }
+Object.mapA = async (o, fn) => { let i = 0, r = {}; for (let k in o) r[k] = await fn(o[k], k, i++); return r; }
 Set.fromArray = a => a.reduce((s, e) => s.add(e), new Set());
 
 Map.prototype.setWith = function (key, val, fn) {

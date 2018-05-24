@@ -50,7 +50,7 @@ async function fnSimpleEqBody(name, url, conf = { read: '*' }) {
   bodyIs = await req(id.url + url);
   if (doSettle) fs.writeFileSync(id.file, bodyIs);
   else {
-    assert.equal(await readFile(id.file), bodyIs);
+    try { assert.equal(await readFile(id.file), bodyIs); } catch (e) { console.log(id.id); throw e; }
     console.log('OK - ' + id.id)
   }
 }
@@ -63,7 +63,7 @@ async function fnSimpleEqJson(name, url, conf = { read: '*' }) {
   bodyIs = await req(id.url + url);
   if (doSettle) fs.writeFileSync(id.file, JSON.stringify(JSON.parse(bodyIs), null, 4));
   else {
-    assert.deepStrictEqual(JSON.parse(await readFile(id.file)), JSON.parse(bodyIs));
+     try { assert.deepStrictEqual(JSON.parse(bodyIs), JSON.parse(await readFile(id.file))); } catch (e) { console.log(id.id); throw e; }
      console.log('OK - ' + id.id);
   }
 }
@@ -87,8 +87,8 @@ async function fnAuthContent() {
   bodyIs = await req({ url: id.url + 'alfa.debug.json', headers: { Cookie: "u=nosuchuser" }});
   if (doSettle) fs.writeFileSync(id.file, bodyIs);
   else {
-    assert.deepStrictEqual(JSON.parse(await readFile(id.file)), JSON.parse(bodyIs));
-     console.log('OK - ' + id.id);
+    assert.deepStrictEqual(JSON.parse(bodyIs), JSON.parse(await readFile(id.file)));
+    console.log('OK - ' + id.id);
   }
 }
 

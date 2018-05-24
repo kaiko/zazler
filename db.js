@@ -1,7 +1,6 @@
 const url = require('url');
 const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
 const Lite3 = require('sqlite3');
-const {promisify} = require('util');
 const { breakOn, zipObject } = require('./toolbox.js');
 
 function urlToConnection(dbUrl) {
@@ -100,7 +99,7 @@ async function DbConnPg(props) {
   pg.types.setTypeParser(701, parseFloat);
   pg.types.setTypeParser(700, parseFloat);
 
-  return Object.create(DbConnPg.Proto, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, configurable: true, enumerable: true, writable: true } });
+  return Object.create(DbConnPg.Proto, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, enumerable: true, writable: true } });
 }
 DbConnPg.Proto = {
   // end:   async function () { return null; /* await this.pool.end() */ },
@@ -127,7 +126,7 @@ DbConnPg.Proto = {
     let q = this.query.bind(this);
     await client.query('BEGIN');
     return {
-      commit: async () => { await client.query('COMMIT'); client.release(); }, // TODO: why I get error message releasing connection (already released)
+      commit: async () => { await client.query('COMMIT'); client.release(); },
       query:  (sql,args = []) => this.runQ(sql, args, client),
       exec:   async (sql, args = []) => {
         try {
@@ -287,7 +286,7 @@ DbConnPg.queryConstraints =
 
 async function DbConnMy(props) {
   const my = require('mysql');
-  return Object.create(DbConnMy.Proto, { props: { value: props }, pool: { value: my.createPool(props) } , _schema: { value: null, configurable: true, enumerable: true, writable: true } })
+  return Object.create(DbConnMy.Proto, { props: { value: props }, pool: { value: my.createPool(props) }, _schema: { value: null, writable: true } });
 }
 DbConnMy.Proto = {
   // end:   async function () { await this.client.end() },
@@ -376,7 +375,7 @@ DbConnMy.types = {
 }
 
 async function DbConnLt(props) {
-  return Object.create(DbConnLt.Proto, { conn: { value: await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE })}, _schema: { value: null, writable: true, enumerable: true, configurable: true } });
+  return Object.create(DbConnLt.Proto, { conn: { value: await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE })} ,_schema: { value: null, writable: true }, props: { value: props }  });
 }
 DbConnLt.Proto = {
   // end:   async function () { await this.client.end() },
@@ -402,7 +401,7 @@ DbConnLt.Proto = {
       return { data: R, cols: R.length === 0 ? [] : Object.keys(R[0]), types: typesGen, rawTypes: types };
   },
   transaction: async function () {
-    const client = this.conn;  // await Lite.open(this.props.filename || ':memory:', { Promise });
+    const client = this.conn; // await Lite.open(this.props.filename || ':memory:', { Promise });
     // await client.run('BEGIN'); // FIXME: how to do transactions in :memory:
     return {
       query: (sql, args = []) => client.query(sql, args)
@@ -452,9 +451,9 @@ async function DbConnOr(props) {
 DbConnOr.Proto = {
   // end:   async function () { await this.client.end() },
   query: async function (q, args = []) {
-      let R = await promisify(this.conn.execute)(q, args, { extendedMetaData: true }); // TODO: oracle types
+      let R = await this.conn.execute(q, args, { extendedMetaData: true }); // TODO: oracle types
       let cols = R.metaData.map(f => f.name);
-      return { data: R.map(r => zipObject(cols, r.map(c => c.toString()) )), cols , types: cols.map(c => 'str'), rawTypes: cols.map(c => 'unknown') };
+      return { data: R.rows.map(r => zipObject(cols, r.map(c => c === null ? null : c.toString()) )), cols , types: cols.map(c => 'str'), rawTypes: cols.map(c => 'unknown') };
   },
   transaction: async function () {
     const client = this.conn;

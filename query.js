@@ -291,20 +291,20 @@ QList.prototype = protoQ({
 // QSet if for update and insert, given object key is fieldname and value is QValue
 function QSet(table, sets = {}) { this.table, this.sets = sets; }
 QSet.prototype = protoQ({
-   sqlSnippet : function (Sql) { return Object.map(this.sets, (f, v) => new QField(this.table, f).sqlSnippet(Sql) + ' = ' + v.sqlSnippet(Sql)).join(', ') }
-,  travVar    : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travVar  (fn))); }
-,  travToken  : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travToken(fn))); }
-,  travField  : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travField(fn))); }
-,  travFunc   : function (fn) { return new QSet(this.table, Object.onValues(this.sets, v => v.travFunc(fn))); }
-,  travVarA   : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travVarA  (fn))); }
-,  travTokenA : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travTokenA(fn))); }
-,  travFieldA : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travFieldA(fn))); }
-,  travFuncA  : async function (fn) { return new QSet(this.table, await Object.onValuesA(this.sets, v => v.travFuncA(fn))); }
-,  describe   : function () { return Object.onValues(this.sets, e => e.describe()) }
+   sqlSnippet : function (Sql) { return Object.map(this.sets, (v, f) => new QField(this.table, f).sqlSnippet(Sql) + ' = ' + v.sqlSnippet(Sql)).values().join(', ') }
+,  travVar    : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travVar  (fn))); }
+,  travToken  : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travToken(fn))); }
+,  travField  : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travField(fn))); }
+,  travFunc   : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travFunc(fn))); }
+,  travVarA   : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travVarA  (fn))); }
+,  travTokenA : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travTokenA(fn))); }
+,  travFieldA : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travFieldA(fn))); }
+,  travFuncA  : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travFuncA(fn))); }
+,  describe   : function () { return Object.map(this.sets, e => e.describe()) }
 ,  append1    : function (key, val) { return new QSet(this.table, Object.assign(this.sets, {[key]: val})); }
 ,  appendSet  : function (set) { return new QSet(this.table||set.table, Object.assign({}, this.sets||{}, set.sets||{})); }
 ,  keys       : function () { return new QList( Object.keys(this.sets).map(f => new QField(this.table, f)) ) }
-,  values     : function () { return new QList( Object.map(this.sets, (_, v) => v) ); }
+,  values     : function () { return new QList( Object.values(this.sets) ); }
 ,  filter     : function (ls) {
     let filtFn = ls.has ? x => ls.has(x) : x => ls.includes(x); // array of Set; (don't use ls[ ls.has ? 'has' : 'include'] because of speed) 
     return new QSet( this.table, Object.keys(this.sets).filter(filtFn).reduce((S,s) => Object.assign(S, {[s]: this.sets[s]}), {}) );
@@ -312,8 +312,8 @@ QSet.prototype = protoQ({
 ,  isSame     : function (el) { return this === el || (this.table === el.table && typeof el.sets === 'object'
                     && Object.keys(this.sets).length === Object.keys(el.sets).length && Object.keys(el.sets).every((k,i) => this.sets[k].isSame(el.sets[k])) ) }
 });
-QSet.fromObject     = (table, o) => new QSet(table, Object.onValues(o, jsToQVal));
-QSet.fromObjectExpr = (table, o) => new QSet(table, Object.onValues(o, v => typeof v === 'string' ? QParser.value.tryParse(v) : jsToQVal(v)));
+QSet.fromObject     = (table, o) => new QSet(table, Object.map(o, jsToQVal));
+QSet.fromObjectExpr = (table, o) => new QSet(table, Object.map(o, v => typeof v === 'string' ? QParser.value.tryParse(v) : jsToQVal(v)));
 
 function QToken(token) { this.token = token; if (typeof token !== 'string') throw new Error('BUG: token is not string'); }
 QToken.prototype = protoQ({
@@ -804,7 +804,7 @@ class WriteRule {
     let allFields = Set.fromArray(schema.filter(f => f._ === 'field' && f.table === this.table).map(f => f.name));
     vars = Object.assign({}, vars, this.vars);
 
-    let newRow = Object.onValues(inp, v => jsToQVal(v));
+    let newRow = Object.map(inp, v => jsToQVal(v));
     let travNew = f => f.table === 'new' ? newRow[f.field] || qNull : f;
 
     let varFn = V => {
@@ -872,16 +872,16 @@ letReplacer = function (vars) {
   }
 
   // let in let
-  letFn  = Object.onValues(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
-  letVar = Object.onValues(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
+  letFn  = Object.map(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
+  letVar = Object.map(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
 
   // FIXME hack
-  letFn  = Object.onValues(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
-  letVar = Object.onValues(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
-  letFn  = Object.onValues(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
-  letVar = Object.onValues(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
-  letFn  = Object.onValues(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
-  letVar = Object.onValues(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
+  letFn  = Object.map(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
+  letVar = Object.map(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
+  letFn  = Object.map(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
+  letVar = Object.map(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
+  letFn  = Object.map(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
+  letVar = Object.map(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
 
   // as let rules can be recursive we don't know when we are done by replacing, therefore we do it until nothing replaced
   // this code is trying to optimize code by not doing traversion on elements that has no tokens and it counts tokens
@@ -904,7 +904,7 @@ letReplacer = function (vars) {
       return el;
     });
   } while (changes > 0);
-  letVar = Object.onValues(letVar, (v,k,i) => lv[i].val );
+  letVar = Object.map(letVar, (v,k,i) => lv[i].val );
 
   return repl;
 }
@@ -975,8 +975,8 @@ letReplacer= function (vars) {
   return repl;
 
   // let in let
-  // letFn  = Object.onValues(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
-  // letVar = Object.onValues(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
+  // letFn  = Object.map(letFn , ({fn, val, args}) => {return {fn: fn, args: args, val: val.travToken(repl.vars).travFunc(repl.func) }});
+  // letVar = Object.map(letVar, v => v.travFunc(repl.func).travToken(repl.vars));
 
   // as let rules can be recursive we don't know when we are done by replacing, therefore we do it until nothing replaced
   // this code is trying to optimize code by not doing traversion on elements that has no tokens and it counts tokens

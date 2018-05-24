@@ -1,4 +1,5 @@
 {
+    "url": "/write1/w.debug.json",
     "table": "w",
     "format": "debug.json",
     "user": null,
@@ -6,13 +7,12 @@
     "isMain": true,
     "isPost": false,
     "vars": {},
-    "cookie": {
-        "url": "/write1/w.debug.json"
-    },
+    "cookie": {},
     "req": {
         "table": "w",
         "format": "debug.json",
         "vars": {},
+        "url": "/write1/w.debug.json",
         "user": null,
         "pass": null,
         "isMain": true,
@@ -30,9 +30,7 @@
             "transaction": false,
             "schemaOnly": false
         },
-        "cookie": {
-            "url": "/write1/w.debug.json"
-        }
+        "cookie": {}
     },
     "console": {},
     "result": {
