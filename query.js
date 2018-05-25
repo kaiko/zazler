@@ -291,7 +291,7 @@ QList.prototype = protoQ({
 // QSet if for update and insert, given object key is fieldname and value is QValue
 function QSet(table, sets = {}) { this.table, this.sets = sets; }
 QSet.prototype = protoQ({
-   sqlSnippet : function (Sql) { return Object.map(this.sets, (v, f) => new QField(this.table, f).sqlSnippet(Sql) + ' = ' + v.sqlSnippet(Sql)).values().join(', ') }
+   sqlSnippet : function (Sql) { let toField = (v, f) => new QField(this.table, f).sqlSnippet(Sql) + ' = ' + v.sqlSnippet(Sql); return Object.values(Object.map(this.sets, toField)).join(', ') }
 ,  travVar    : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travVar  (fn))); }
 ,  travToken  : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travToken(fn))); }
 ,  travField  : function (fn) { return new QSet(this.table, Object.map(this.sets, v => v.travField(fn))); }
