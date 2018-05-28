@@ -726,9 +726,9 @@ QReplace.prototype = protoQ({
     sqlSnippet(Sql) { throw new Error('sqlSnippet can not be used on QReplace because it has many commands; use sqlCommands instead') }
   , sqlCommands: function* (Sql, affected = null) {
       yield 'UPDATE ' + new QName(this.table).sqlSnippet(Sql) + ' SET ' + this.set.sqlSnippet(Sql) + ' WHERE ' + this.where.sqlSnippet(Sql);
-      if (affected === 0) 
-        yield 'INSERT INTO ' + new QName(this.table).sqlSnippet(Sql) + ' (' + this.set.keys().sqlSnippet(Sql) + ') VALUES (' + this.set.values().sqlSnippet(Sql) + ')';
-      else yield null;
+      yield 'INSERT INTO ' + new QName(this.table).sqlSnippet(Sql) + ' (' + this.set.keys().sqlSnippet(Sql) + ') VALUES (' + this.set.values().sqlSnippet(Sql) + ')';
+      // if (affected === 0)  // FIXME: it doesn't work correctly
+      // else yield null;
   }
   , travVar  : function (fn) { return new QReplace(this.table, this.set.travVar  (fn), this.where.travVar  (fn)); }
   , travToken: function (fn) { return new QReplace(this.table, this.set.travToken(fn), this.where.travToken(fn)); }
