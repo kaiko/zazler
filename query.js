@@ -301,7 +301,7 @@ QSet.prototype = protoQ({
 ,  travFieldA : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travFieldA(fn))); }
 ,  travFuncA  : async function (fn) { return new QSet(this.table, await Object.mapA(this.sets, v => v.travFuncA(fn))); }
 ,  describe   : function () { return Object.map(this.sets, e => e.describe()) }
-,  append1    : function (key, val) { return new QSet(this.table, Object.assign(this.sets, {[key]: val})); }
+,  append1    : function (key, val) { return new QSet(this.table, Object.assign({}, this.sets, {[key]: val})); }
 ,  appendSet  : function (set) { return new QSet(this.table||set.table, Object.assign({}, this.sets||{}, set.sets||{})); }
 ,  keys       : function () { return new QList( Object.keys(this.sets).map(f => new QField(this.table, f)) ) }
 ,  values     : function () { return new QList( Object.values(this.sets) ); }
@@ -724,8 +724,8 @@ function QReplace (table, set, where) {
 }
 QReplace.prototype = protoQ({
     sqlSnippet(Sql) { throw new Error('sqlSnippet can not be used on QReplace because it has many commands; use sqlCommands instead') }
-  , sqlCommands: function* (Sql) {
-      let affected = yield 'UPDATE ' + new QName(this.table).sqlSnippet(Sql) + ' SET ' + this.set.sqlSnippet(Sql) + ' WHERE ' + this.where.sqlSnippet(Sql);
+  , sqlCommands: function* (Sql, affected = null) {
+      yield 'UPDATE ' + new QName(this.table).sqlSnippet(Sql) + ' SET ' + this.set.sqlSnippet(Sql) + ' WHERE ' + this.where.sqlSnippet(Sql);
       if (affected === 0) 
         yield 'INSERT INTO ' + new QName(this.table).sqlSnippet(Sql) + ' (' + this.set.keys().sqlSnippet(Sql) + ') VALUES (' + this.set.values().sqlSnippet(Sql) + ')';
       else yield null;

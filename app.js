@@ -312,7 +312,7 @@ AppPrototype = {
         try {
           sqlResult = await this.runSelect(t, null,
               Object.assign({}, R.vars, this.auth.contentVars || {}),
-              Object.assign( R.meta, { auth: async () => null }),
+              Object.assign({}, R.meta, { auth: async () => null }),
               sch, [], // remove filters in this context
               {...R.req, ...{ cookie: cookies } });
           fmtResult = await sqlResult.format(f);
@@ -492,13 +492,14 @@ AppPrototype = {
 
       let travNew = f => f.table === 'new' ? jsToQVal(irows[i][f.field] || null) : f;
 
-      let cmd, sqlGen = Q.sqlCommands(this.sqlType);
+      let cmd, sqlGen = Q.sqlCommands(this.sqlType), lastAffected;
       do {
         cmd = sqlGen.next();
         if (cmd.value) {
           this.evSql({sql: cmd.value});
-          affected.push( await db.exec(cmd.value) );
+          affected.push( lastAffected = await db.exec(cmd.value) );
         }
+        if (lastAffected === 1) break; // FIXME: this is hack for replace bug (did only update)
       } while (cmd.value && !cmd.done);
 
 
