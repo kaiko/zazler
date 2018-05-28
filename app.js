@@ -492,7 +492,7 @@ AppPrototype = {
 
       let travNew = f => f.table === 'new' ? jsToQVal(irows[i][f.field] || null) : f;
 
-      let cmd, sqlGen = Q.sqlCommands(this.sqlType), lastAffected;
+      let cmd, sqlGen = Q.sqlCommands(this.sqlType), lastAffected = 0;
       do {
         cmd = lastAffected === 0 ? sqlGen.next() : {done: true, value: null};
         if (cmd.value) {
