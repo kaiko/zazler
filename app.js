@@ -494,12 +494,12 @@ AppPrototype = {
 
       let cmd, sqlGen = Q.sqlCommands(this.sqlType), lastAffected;
       do {
-        cmd = sqlGen.next();
+        cmd = lastAffected === 0 ? sqlGen.next() : {done: true, value: null};
         if (cmd.value) {
           this.evSql({sql: cmd.value});
           affected.push( lastAffected = await db.exec(cmd.value) );
         }
-        if (lastAffected === 1) break; // FIXME: this is hack for replace bug (did only update)
+        console.log('Affected: ' + lastAffected  +'; sql: ' + cmd.value);
       } while (cmd.value && !cmd.done);
 
 
