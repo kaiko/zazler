@@ -22,7 +22,7 @@ function urlToConnection(dbUrl) {
   if (['mysql:','my:'].includes(u.protocol)) {
     let c = {
       type: 'my'
-    , port: parseInt(u.port || 5432) 
+    , port: parseInt(u.port || 3306) 
     , host: u.hostname
     , database: u.pathname ? u.pathname.split('/')[1] : ''
     }
@@ -43,6 +43,23 @@ function urlToConnection(dbUrl) {
     if (u.query) // yeah yeah URLSearchParams
       u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
       .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+    return c;
+  } else
+  if (['db2:'].includes(u.protocol)) {
+    let c = {
+      type: 'db2'
+    , port: parseInt(u.port || 6000) 
+    , host: u.hostname
+    , database: u.pathname ? u.pathname.split('/')[1] : ''
+    }
+    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
+
+    if (u.query) // yeah yeah URLSearchParams
+      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
+      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+
+    c.connectString = `DATABASE=${c.database};HOSTNAME=${c.host};UID=${c.user};PWD=${c.password};PORT=${c.port};PROTOCOL=TCPIP`;
+
     return c;
   } else
   if (['oracle:'].includes(u.protocol)) {
@@ -83,6 +100,7 @@ async function DbConn(props) {
   case 'sqlite':
   case 'lt': c = await DbConnLt(props); break;
   case 'or': c = await DbConnOr(props); break;
+  case 'db2': c = await DbConnDb2(props); break;
   default: throw new Error("Connection props must have `type` property with value 'sqlite', 'pg', 'mysql' or 'or' (for Oracle)");
   }
   return c;
@@ -451,9 +469,22 @@ async function DbConnOr(props) {
 DbConnOr.Proto = {
   // end:   async function () { await this.client.end() },
   query: async function (q, args = []) {
-      let R = await this.conn.execute(q, args, { extendedMetaData: true }); // TODO: oracle types
+      let R = await this.conn.execute(q.trim().replace(/;$/, ''), args, { extendedMetaData: true /* , outFormat: oracledb.OBJECT  */ }); // TODO outFormat object is probably faster (no need to do it by myself here)
       let cols = R.metaData.map(f => f.name);
-      return { data: R.rows.map(r => zipObject(cols, r.map(c => c === null ? null : c.toString()) )), cols , types: cols.map(c => 'str'), rawTypes: cols.map(c => 'unknown') };
+      let rt = [], gt = []; // raw- and generaly type
+      R.metaData
+      .map(f => [f.dbType, ... (DbConnOr.types[f.dbType] || [])]) // put all values for type to one array
+      .forEach(([dbType, rawType, genType]) => {
+        if (!rawType) {
+          console.warn('Unsupported Oracle type, dbType: ' + dbType + '; query: ' + q); // TODO: what should be right logging for that
+          rt.push(dbType.toString());
+          gt.push('str'); // TODO: should convert all columns to string
+        } else {
+          rt.push(rawType);
+          gt.push(genType);
+        }
+      });
+      return { data: R.rows.map(r => zipObject(cols, r )), cols, types: gt, rawTypes: rt };
   },
   transaction: async function () {
     const client = this.conn;
@@ -480,5 +511,139 @@ DbConnOr.Proto = {
   }
 };
 DbConnOr.queryFields = "SELECT table_name, column_name, data_type, data_length FROM USER_TAB_COLUMNS";
+
+// Based on true story: https://github.com/oracle/node-oracledb/blob/master/doc/api.md#oracledbconstantsdbtype
+DbConnOr.types = 
+{  101 : [ 'BINARY_DOUBLE', 'int' ]
+,  100 : [ 'BINARY_FLOAT', 'double']
+,  113 : [ 'BLOB', 'str' ]
+,   96 : [ 'CHAR', 'str' ]
+,  112 : [ 'CLOB', 'str' ]
+,   12 : [ 'DATE', 'date' ]
+,    8 : [ 'LONG', 'str' ]
+,   24 : [ 'LONG RAW', 'str' ]
+, 1096 : [ 'NCHAR', 'str']
+, 1112 : [ 'NCLOB', 'str']
+,    2 : [ 'NUMBER', 'double' ]
+, 1001 : [ 'NVARCHAR', 'str' ]
+,   23 : [ 'RAW', 'str' ]
+,  104 : [ 'ROWID', 'int' ]
+,  187 : [ 'TIMESTAMP', 'datetime' ]
+,  232 : [ 'TIMESTAMP WITH LOCAL TIME ZONE', 'datetime' ]
+,  188 : [ 'TIMESTAMP WITH TIME ZONE', 'datetime' ]
+,    1 : [ 'VARCHAR2', 'str' ]
+};
+
+async function DbConnDb2(props) {
+  const db2 = require('ibm_db');
+
+  return new Promise((onSucc, onFail) => {
+    db2.open(props, (err, conn) => {
+      let x;
+      if (err) onFail(err);
+      else onSucc( Object.create(DbConnDb2.Proto, { conn: { value: conn }, props: { value: props }, _schema: { value: null, writable: true } }) );
+    })
+  })
+}
+DbConnDb2.Proto = {
+  // end:   async function () { await this.client.end() },
+  query: async function (q, args = []) {
+      let me = this;
+      return new Promise((ok, failure) => {
+        me.conn.queryResult(q.trim().replace(/;$/, ''), args, (err, R) => {
+          if (err) {
+            failure(err);
+            return;
+          }
+          let cols = R.getColumnMetadataSync();
+          let data = R.fetchAllSync();
+          let rt = [], gt = []; // raw- and generaly type
+          cols
+          .map(f => [f.SQL_DESC_TYPE_NAME, ... (DbConnDb2.types[f.SQL_DESC_TYPE_NAME] || [])]) // put all values for type to one array
+          .forEach(([dbType, rawType, genType]) => {
+            if (!rawType) {
+              console.warn('Unsupported DB2 type, dbType: ' + dbType + '; query: ' + q); // TODO: what should be right logging for that
+              rt.push(dbType.toString());
+              gt.push('str'); // TODO: should convert all columns to string
+            } else {
+              rt.push(rawType);
+              gt.push(genType);
+            }
+          });
+          ok({ data: data, cols, types: gt, rawTypes: rt });
+        })
+      });
+  },
+  transaction: async function () {
+    const client = this.conn;
+    return new Promise((ok, failure) => {
+      client.query('BEGIN', [], err => {
+        if (err) failure(err);
+        else ok({
+          query: (sql, args = []) => client.query(sql, args)
+        , exec:   async (sql, args = []) => (await client.execute(sql, args)).rowsAffected // TODO error handling and rollback
+        , commit: async () => await client.query('COMMIT')
+        })
+      });
+    });
+  },
+  schema: async function () {
+    if (!this._schema) await this.learn();
+    return this._schema;
+  },
+  learn: async function () {
+    const client = this.conn;
+    let sch = [], curTable = '', base = { read: false, write: false, hidden: false, prot: false }, tableDone = 0;
+    return new Promise((ok, failure) => {
+      client.query(DbConnDb2.queryTables, [], (err, tables) => {
+        if (err) { failure(err); return; }
+        else {
+          for (let t = 0; t < tables.length; t++) {
+            let tname = tables[t].TABNAME;
+            client.query(DbConnDb2.queryFields, [ tname ], (err, cols) => {
+              if (err) { failure(err); return; }
+
+              sch.push(Object.assign({_: 'table', comment: '', name:  tname }, base));
+    
+              cols.forEach(({NAME, COLTYPE}) => {
+                sch.push(Object.assign({_: 'field', comment: '', table: tname, name: NAME, type: COLTYPE.trim(), genType: (DbConnDb2.types[ COLTYPE.trim() ]||['?','?'])[1], autonum: false }, base))
+              });
+              if (++tableDone === tables.length) ok(this._schema = sch);
+            });
+          }
+        }
+      })
+    })
+  }
+};
+DbConnDb2.queryTables = "select tabname from syscat.tables";
+DbConnDb2.queryFields = "select name, coltype from Sysibm.syscolumns where tbname = ?";
+  
+DbConnDb2.types = 
+{  "SMALLINT": [ "SMALLINT", "int" ]
+,  "INTEGER": [ "INTEGER", "int" ]
+,  "BIGINT": [ "BIGINT", "int" ]
+,  "REAL": [ "REAL", "double" ]
+,  "NUMERIC": [ "NUMERIC", "double" ]
+,  "DECIMAL": [ "DECIMAL", "double" ]
+,  "DOUBLE": [ "DOUBLE", "double" ]
+,  "DECFLOAT": [ "DECFLOAT", "double" ]
+,  "CHAR": [ "CHAR", "str" ]
+,  "VARCHAR": [ "VARCHAR", "str" ]
+,  "CBLOB": [ "CBLOB", "str" ]
+,  "BLOB": [ "BLOB", "str" ]
+,  "CLOB": [ "CLOB", "str" ]
+,  "MONEY": [ "MONEY", "double" ]
+,  "DISTINCT": [ "DISTINCT", "str" ] // not sure this is str
+,  "GRAPHIC": [ "GRAPHIC", "str" ]
+,  "VARBINARY" : [ "VARBINARY", "str" ]
+,  "VARGRAPH" : [ "VARGRAPH", "str" ]
+,  "DATE" : [ "DATE", "date" ]
+,  "TIME" : [ "TIME", "time" ]
+,  "XML" : [ "XML", "str" ]
+,  "TIMESTMP" : [ "TIMESTAMP", "datetime" ]
+,  "TIMESTAMP WITHOUT TIME ZONE" : [ "TIMESTAMP WITHOUT TIME ZONE", "datetime" ]
+,  "TIMESTAMP WITH TIME ZONE" : [ "TIMESTAMP WITH TIME ZONE", "datetime" ]
+};
 
 module.exports = { urlToConnection, DbConn }

@@ -499,7 +499,7 @@ AppPrototype = {
           this.evSql({sql: cmd.value});
           affected.push( lastAffected = await db.exec(cmd.value) );
         }
-        console.log('Affected: ' + lastAffected  +'; sql: ' + cmd.value);
+        // console.log('Affected: ' + lastAffected  +'; cmd: ' + JSON.stringify(cmd));
       } while (cmd.value && !cmd.done);
 
 
