@@ -134,6 +134,7 @@ DbConnPg.Proto = {
     let t = R.fields.map(f => {
       if (!DbConnPg.types[f.dataTypeID]) {
         console.error('Warning: no DbConnPg.type ' + f.dataTypeID);
+        return ['Unsupported (' + f.dataTypeID + ')', 'str'];
       }
       return DbConnPg.types[f.dataTypeID];
     })

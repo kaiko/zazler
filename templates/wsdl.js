@@ -119,7 +119,7 @@ var O = '<?xml version="1.0" encoding="UTF-8"?>' +
 '\n     <xs:element name="' + ResName  + '">' +
 "\n       <xs:complexType>" +
 "\n         <xs:sequence>" +
-'\n          <xs:element name="row">' +
+'\n          <xs:element name="row" maxOccurs="unbounded">' +
 "\n             <xs:annotation>" +
 "\n               <xs:appinfo>" +
 '\n                 <xrd:title xml:lang="et">väljundkirje teenusest ' + escXml(tableName) + '</xrd:title>' +
