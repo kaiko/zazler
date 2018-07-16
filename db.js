@@ -1,79 +1,66 @@
 const url = require('url');
 const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
 const Lite3 = require('sqlite3');
-const { breakOn, zipObject } = require('./toolbox.js');
+const { breakOn, zipObject, uriArgs } = require('./toolbox.js');
+
+// flatToTree makes keys containing dots to object
+// {a: 1, "b.c": 2} ==> { a:1, b: { c: 2 } }
+flatToTree = (o, subOn = '.') => {
+  let root = {}; // this is object where we copy values
+  let filler = (cur, ks, level) => // recursive function to create subjects and fill results
+     level === ks.length - 1 // check if last step, no subobjects
+        ?         cur[ks[level]] = o[ks.join(subOn)] // fill with value, take it from main object
+        : filler( cur[ks[level]] = cur[ks[level]] || {}, ks, level + 1); // create object if needed and continue with filling
+  Object.keys(o).forEach(key => filler(root,key.split(subOn), 0));
+  return root;
+}
 
 function urlToConnection(dbUrl) {
   let u = url.parse(dbUrl);
   if (['postgresql:','pg:','psql:'].includes(u.protocol)) {
-    let c = {
-      type: 'pg'
-    , port: parseInt(u.port || 5432) 
-    , host: u.hostname
-    , database: u.pathname ? u.pathname.split('/')[1] : ''
-    }
-    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
-    if (u.query) // yeah yeah URLSearchParams
-      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
-
-    return c;
+    return Object.assign({},
+      uriArgs(u.query),
+      { type: 'pg'
+      , port: parseInt(u.port || 5432) 
+      , host: u.hostname
+      , database: u.pathname ? u.pathname.split('/')[1] : ''
+      },
+      !u.auth ? {} : (([u,p]) => ({user: u, password: p}))(breakOn(u.auth, ':')));
   } else
   if (['mysql:','my:'].includes(u.protocol)) {
-    let c = {
-      type: 'my'
-    , port: parseInt(u.port || 3306) 
-    , host: u.hostname
-    , database: u.pathname ? u.pathname.split('/')[1] : ''
-    }
-    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
-
-    if (u.query) // yeah yeah URLSearchParams
-      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
-
-    return c;
+    return Object.assign({},
+      uriArgs(u.query),
+      { type: 'my'
+      , port: parseInt(u.port || 3306) 
+      , host: u.hostname
+      , database: u.pathname ? u.pathname.split('/')[1] : ''
+      },
+      !u.auth ? {} : (([u,p]) => ({user: u, password: p}))(breakOn(u.auth, ':')));
   } else
   if (['file:','sqlite:','sqlite3:'].includes(u.protocol)) {
-    let c = {
-      type: 'lt'
-    , filename: u.pathname
-    }
-
-    if (u.query) // yeah yeah URLSearchParams
-      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
-    return c;
+    return Object.assign({}, uriArgs(u.query), { type: 'lt' , filename: u.pathname });
   } else
   if (['db2:'].includes(u.protocol)) {
-    let c = {
-      type: 'db2'
+    let c = Object.assign({}, uriArgs(u.query), 
+    { type: 'db2'
     , port: parseInt(u.port || 6000) 
     , host: u.hostname
     , database: u.pathname ? u.pathname.split('/')[1] : ''
-    }
-    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
-
-    if (u.query) // yeah yeah URLSearchParams
-      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+    },
+    !u.auth ? {} : (([u,p]) => ({user: u, password: p}))(breakOn(u.auth, ':')));
 
     c.connectString = `DATABASE=${c.database};HOSTNAME=${c.host};UID=${c.user};PWD=${c.password};PORT=${c.port};PROTOCOL=TCPIP`;
 
     return c;
   } else
   if (['oracle:'].includes(u.protocol)) {
-    let c = {
-      type: 'or'
-    , port: parseInt(u.port || 1521) 
-    , host: u.hostname
-    , database: u.pathname ? u.pathname.split('/')[1] : ''
-    }
-    if (u.auth) [c.user, c.password] = breakOn(u.auth, ':')
-
-    if (u.query) // yeah yeah URLSearchParams
-      u.query.split(/&/g).map(a => breakOn(a, '=')).map(([k,v]) => [decodeURIComponent(k), decodeURIComponent(v)])
-      .forEach(([k,v]) => { if (!c[k]) c[k] = v })
+    let c = Object.assign(uriArgs(u.query),
+      { type: 'or'
+      , port: parseInt(u.port || 1521) 
+      , host: u.hostname
+      , database: u.pathname ? u.pathname.split('/')[1] : ''
+      },
+      !u.auth ? {} : (([u,p]) => ({user: u, password: p}))(breakOn(u.auth, ':')));
 
     c.connectString = c.host + ':' + c.port + '/' + c.database;
 
@@ -133,7 +120,7 @@ DbConnPg.Proto = {
     let o = R.fields.map(f => f.name);
     let t = R.fields.map(f => {
       if (!DbConnPg.types[f.dataTypeID]) {
-        console.error('Warning: no DbConnPg.type ' + f.dataTypeID);
+        console.warn('Warning: no DbConnPg.type ' + f.dataTypeID);
         return ['Unsupported (' + f.dataTypeID + ')', 'str'];
       }
       return DbConnPg.types[f.dataTypeID];
@@ -208,8 +195,8 @@ DbConnPg.types = {
   , 701  : [ 'float8', 'double']
   , 16   : [ 'bit'   , 'bool'  ]
   , 1082 : [ 'date'  , 'date'  ]
-  , 1114 : [ 'date'  , 'date'  ]
-  , 1184 : [ 'timestamp', 'datetime']
+  , 1114 : [ 'timestamp without time zone'  , 'datetime'  ]
+  , 1184 : [ 'timestamp with time zone', 'datetime']
   , 20   : [ 'bigint'  , 'int'  ]
   , 21   : [ 'smallint', 'int'  ]
   , 23   : [ 'integer' , 'int'  ]  // TODO what's the difference between 23 and 26
@@ -218,7 +205,6 @@ DbConnPg.types = {
   , 700  : [ 'real'    , 'float' ] // TODO is this really 'real'? check
   , 701  : [ 'double precision', 'float' ]
   , 16   : [ 'boolean', 'bool' ]
-  , 1114 : [ 'date', 'date']
   , 1184 : [ 'date', 'date']
   , 25   : [ 'text', 'str']
   , 1043 : [ 'varchar', 'str']
@@ -459,18 +445,14 @@ async function DbConnOr(props) {
   const oracledb = require('oracledb');
   oracledb.autoCommit = false;
 
-  return new Promise((onSucc, onFail) => {
-    oracledb.getConnection(props, (err, conn) => {
-      let x;
-      if (err) onFail(err);
-      else onSucc( Object.create(DbConnOr.Proto, { conn: { value: conn }, props: { value: props }, _schema: { value: null, writable: true } }) );
-    })
-  })
+  return Object.create(DbConnOr.Proto, { props: { value: props }, pool: { value: oracledb.createPool(props) }, _schema: {  value: null, writable: true } } );
 }
 DbConnOr.Proto = {
   // end:   async function () { await this.client.end() },
   query: async function (q, args = []) {
-      let R = await this.conn.execute(q.trim().replace(/;$/, ''), args, { extendedMetaData: true /* , outFormat: oracledb.OBJECT  */ }); // TODO outFormat object is probably faster (no need to do it by myself here)
+      let client = await this.pool.getConnection();
+      let R = await client.execute(q.trim().replace(/;$/, ''), args, { extendedMetaData: true /* , outFormat: oracledb.OBJECT  */ }); // TODO outFormat object is probably faster (no need to do it by myself here)
+      client.release(err => { if (err) console.error(err) } );
       let cols = R.metaData.map(f => f.name);
       let rt = [], gt = []; // raw- and generaly type
       R.metaData
@@ -488,12 +470,12 @@ DbConnOr.Proto = {
       return { data: R.rows.map(r => zipObject(cols, r )), cols, types: gt, rawTypes: rt };
   },
   transaction: async function () {
-    const client = this.conn;
+    const client = await this.pool.getConnection();
     await client.execute('BEGIN');
     return {
       query: (sql, args = []) => client.execute(sql, args)
     , exec:   async (sql, args = []) => (await client.execute(sql, args)).rowsAffected // TODO error handling and rollback
-    , commit: async () => await client.execute('COMMIT')
+    , commit: async () => { await client.execute('COMMIT'); client.release(); }
     }
   },
   schema: async function () {
@@ -501,13 +483,14 @@ DbConnOr.Proto = {
     return this._schema;
   },
   learn: async function () {
-    const client = this.conn;
+    const client = await this.pool.getConnection();
     let sch = [], curTable = '', base = { read: false, write: false, hidden: false, prot: false };
     (await client.execute(DbConnOr.queryFields)).rows.forEach(([tname, cname, dtype, dlen]) => {
       if (curTable != tname)
       sch.push(Object.assign({_: 'table', comment: '', name:  tname }, base));
       sch.push(Object.assign({_: 'field', comment: '', table: tname, name: cname, type: dtype, genType: 'str', autonum: false }, base)); // FIXME genType
     });
+    client.release();
     this._schema = sch;
   }
 };
