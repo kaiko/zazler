@@ -1,6 +1,6 @@
 {
   "name": "zazler",
-  "version": "1.0.39",
+  "version": "1.0.41",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com> (http://www.zazler.com/)",
   "homepage": "http://zazler.com/",
   "main": "app.js",
@@ -47,7 +47,7 @@
     "request": "latest"
   },
   "engines": {
-    "node": ">=8.0.0 <10.0"
+    "node": ">=8.0.0"
   },
   "scripts": {
     "test": "mocha"

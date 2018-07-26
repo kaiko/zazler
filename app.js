@@ -134,7 +134,7 @@ AppPrototype = {
     this.hide  = new AccessRule(conf.hide);
     this.prot  = new AccessRule(conf.prot || conf.protect);
 
-    this.wrules = (conf["write-rules"] || []).map(r => new WriteRule(r, { varsWithout$: this.varsWithout$, inlineStrings: this.inlineStrings } ));
+    this.wrules = (conf["write-rules"] || []).map(r => new WriteRule(r, { varsWithout$: this.varsWithout$, inlineStrings: this.inlineStrings }, this.sqlType ));
 
     if (!conf.auth) this.auth = null;
     else {

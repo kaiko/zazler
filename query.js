@@ -12,6 +12,7 @@ SqlPg = {
   , hasBooleans: true
   , esc:  v => ("'" + v.replace(/'/g, '\\\'') +  "'")
   , name: v => ('"' + v.replace(/"/g, '""') + '"')
+  , lastInsertId: "lastval()"
 }
 
 SqlMy = {
@@ -19,6 +20,7 @@ SqlMy = {
   , hasBooleans: true
   , esc: v => ("'" + v.replace(/'/g, '\\\'') +  "'")
   , name: v => ('`' + v.replace(/`/g, '``') + '`')      // TODO  check
+  , lastInsertId: "last_insert_id()"
 }
 
 SqlLt = {
@@ -26,6 +28,7 @@ SqlLt = {
   , hasBooleans: false
   , esc : v => ("'" + v.replace(/'/g, '\'\'') + "'")
   , name: v => ('"' + v.replace(/"/g,   '""') + '"')
+  , lastInsertId: "last_insert_rowid()"
 }
 
 SqlJsPseudo = { // This is used to get SQL expression without escaping
@@ -769,7 +772,8 @@ async function fillUp(q, vars, custFn, meta, evArg) {
 }
 
 class WriteRule {
-  constructor (inf, conf = {}) {
+  constructor (inf, conf = {}, sqlType = {}) {
+    let lastId = sqlType.lastInsertId || 'last_insert_id()';
     Object.assign(this, inf);
     if (!inf.table ) throw "Write-rule must have `table` (" + JSON.stringify(inf) + ')';
     if (!inf.on    ) throw "Write-rule must have `on` (" + JSON.stringify(inf) + ')';
@@ -790,8 +794,8 @@ class WriteRule {
 
     if (this.returning) {
       let m, R = this.returning;
-      if (m = R.match(/seq +(\w+) +(\w+)/)) this.retWhere = new QTempl('returning', '$0 = currval($1)'     , [ new QField(this.table, m[1]), new QString(m[2]) ]); else
-      if (m = R.match(/autonum +(\w+)/))    this.retWhere = new QTempl('returning', '$0 = last_insert_id()', [ new QField(this.table, m[1]) ]);
+      if (m = R.match(/seq +(\w+) +(\w+)/)) this.retWhere = new QTempl('returning', '$0 = currval($1)', [ new QField(this.table, m[1]), new QString(m[2]) ]); else
+      if (m = R.match(/autonum +(\w+)/))    this.retWhere = new QTempl('returning', '$0 = ' + lastId  , [ new QField(this.table, m[1]) ]);
       else this.retWhere = QParser.value.tryParse(this.returning);
     }
     

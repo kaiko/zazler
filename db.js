@@ -1,7 +1,10 @@
 const url = require('url');
+const fs = require('fs');
 const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
 const Lite3 = require('sqlite3');
-const { breakOn, zipObject, uriArgs } = require('./toolbox.js');
+const { breakOn, zipObject, uriArgs, parseBool } = require('./toolbox.js');
+
+trace = x => { console.log(x); return x; }
 
 // flatToTree makes keys containing dots to object
 // {a: 1, "b.c": 2} ==> { a:1, b: { c: 2 } }
@@ -15,11 +18,27 @@ flatToTree = (o, subOn = '.') => {
   return root;
 }
 
+// so, these functions with Object.mapDeep helps will make strings to integer where only numbers are present
+// for example poolMax=1 in URL is treated as string but drivers are waiting integer
+// it's a bit hack but it's better than check all arguments manually
+parseIntSoft = str => typeof str === 'string' && str.match(/-?[0-9]/) ? parseInt(str, 10) : str;
+mapInt = o => Object.mapDeep(o, parseIntSoft);
+
+sslFiles = c => {
+  if (c.ssl && typeof c.ssl === 'object') {
+    return Object.assign({}, c, { ssl: Object.assign({} // return new object, don't change old (just nice)
+    , !c.ssl.ca   ? {} : { ca  : fs.readFileSync(c.ssl.ca  ) } // only if there is this key, add this to ssl object
+    , !c.ssl.key  ? {} : { key : fs.readFileSync(c.ssl.key ) }
+    , !c.ssl.cert ? {} : { cert: fs.readFileSync(c.ssl.cert) }
+    )})
+  } else return c;
+}
+
 function urlToConnection(dbUrl) {
   let u = url.parse(dbUrl);
   if (['postgresql:','pg:','psql:'].includes(u.protocol)) {
     return Object.assign({},
-      uriArgs(u.query),
+      sslFiles(mapInt(flatToTree(uriArgs(u.query)))),
       { type: 'pg'
       , port: parseInt(u.port || 5432) 
       , host: u.hostname
@@ -29,7 +48,7 @@ function urlToConnection(dbUrl) {
   } else
   if (['mysql:','my:'].includes(u.protocol)) {
     return Object.assign({},
-      uriArgs(u.query),
+      sslFiles(mapInt(flatToTree(uriArgs(u.query)))),
       { type: 'my'
       , port: parseInt(u.port || 3306) 
       , host: u.hostname
@@ -38,10 +57,11 @@ function urlToConnection(dbUrl) {
       !u.auth ? {} : (([u,p]) => ({user: u, password: p}))(breakOn(u.auth, ':')));
   } else
   if (['file:','sqlite:','sqlite3:'].includes(u.protocol)) {
-    return Object.assign({}, uriArgs(u.query), { type: 'lt' , filename: u.pathname });
+    return Object.assign({}, mapInt(flatToTree(uriArgs(u.query))), { type: 'lt' , filename: u.pathname });
   } else
   if (['db2:'].includes(u.protocol)) {
-    let c = Object.assign({}, uriArgs(u.query), 
+    let c = Object.assign({},
+    mapInt(flatToTree(uriArgs(u.query))),
     { type: 'db2'
     , port: parseInt(u.port || 6000) 
     , host: u.hostname
@@ -54,7 +74,8 @@ function urlToConnection(dbUrl) {
     return c;
   } else
   if (['oracle:'].includes(u.protocol)) {
-    let c = Object.assign(uriArgs(u.query),
+    let c = Object.assign({},
+      mapInt(flatToTree(uriArgs(u.query))),
       { type: 'or'
       , port: parseInt(u.port || 1521) 
       , host: u.hostname
@@ -380,7 +401,12 @@ DbConnMy.types = {
 }
 
 async function DbConnLt(props) {
-  return Object.create(DbConnLt.Proto, { conn: { value: await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE })} ,_schema: { value: null, writable: true }, props: { value: props }  });
+  let conn = await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
+  let pragma, P = DbConnLt.Pragmas;
+  for (pragma in P)
+    if (props[pragma])
+      await conn.run("PRAGMA " + pragma + " = " + P[pragma](props[pragma]))
+  return Object.create(DbConnLt.Proto, { conn: { value: conn }, _schema: { value: null, writable: true }, props: { value: props }  });
 }
 DbConnLt.Proto = {
   // end:   async function () { await this.client.end() },
@@ -439,13 +465,52 @@ DbConnLt.Proto = {
 DbConnLt.queryTables = "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name != 'sqlite_sequence'"
 DbConnLt.queryFields = t => "PRAGMA table_info('" + t + "')"; // FIXME: escape
 DbConnLt.queryConstr = t => "PRAGMA foreign_key_list('" + t + "')";
+DbConnLt.Pragmas = {
+   application_id:      parseInt
+,  auto_vacuum:         parseInt // yeah, NONE/FULL/INCREMENTAL should also be supported
+,  automatic_index:     x => parseBool(x)?'1':'0'
+,  busy_timeout:        parseInt
+,  cache_size:          parseInt
+,  cache_spill:         x => parseBool(x)?'1':'0'
+,  case_sensitive_like: x => parseBool(x)?'1':'0'
+,  cell_size_check:     x => parseBool(x)?'1':'0'
+,  checkpoint_fullfsync:x => parseBool(x)?'1':'0'
+,  defer_foreign_keys:  x => parseBool(x)?'1':'0'
+,  encoding:            x => x
+,  foreign_keys:        x => parseBool(x)?'1':'0'
+,  fullfsync:           x => parseBool(x)?'1':'0'
+,  ignore_check_constraints: x => parseBool(x)?'1':'0'
+,  journal_mode:        x => x // user's business to know how to connect ['DELETE', 'TRUNCATE', 'PERSIST','MEMORY','WAL','OFF'].includes(x) ? x : (throw new Error("Invalid journal mode: " + x))
+,  journal_size_limit:  parseInt
+,  legacy_file_format:  x => parseBool(x)?'1':'0'
+,  locking_mode:        x => x
+,  max_page_count:      parseInt
+,  mmap_size:           parseInt
+// ,  optimize:
+,  page_size:           parseInt
+,  query_only:          x => parseBool(x)?'1':'0'
+// ,  quick_check:
+,  read_uncommitted:    x => parseBool(x)?'1':'0'
+,  recursive_triggers:  x => parseBool(x)?'1':'0'
+,  reverse_unordered_selects: x => parseBool(x)?'1':'0'
+// ,  schema_version:      
+,  secure_delete:       x => (typeof x === 'string' && x.toLowerCase() === 'fast') ? 'FAST' : (parseBool(x)?'1':'0')
+,  soft_heap_limit:     parseInt
+,  synchronous:         parseInt // TODO, shoud be more sophisticated
+,  temp_store:          parseInt // TODO
+,  threads:             parseInt
+,  user_version:        parseInt
+,  wal_autocheckpoint:  parseInt
+// ,  wal_checkpoint:     
+,  writable_schema:     x => parseBool(x)?'1':'0'
+};
 
 
 async function DbConnOr(props) {
   const oracledb = require('oracledb');
   oracledb.autoCommit = false;
 
-  return Object.create(DbConnOr.Proto, { props: { value: props }, pool: { value: oracledb.createPool(props) }, _schema: {  value: null, writable: true } } );
+  return Object.create(DbConnOr.Proto, { props: { value: props }, pool: { value: await oracledb.createPool(props) }, _schema: {  value: null, writable: true } } );
 }
 DbConnOr.Proto = {
   // end:   async function () { await this.client.end() },
@@ -519,44 +584,43 @@ DbConnOr.types =
 };
 
 async function DbConnDb2(props) {
-  const db2 = require('ibm_db');
+  const db2Pool = require('ibm_db').Pool;
+  const pool = new db2Pool();
+  if (props.max) pool.setMaxPoolSize(props.max);
 
-  return new Promise((onSucc, onFail) => {
-    db2.open(props, (err, conn) => {
-      let x;
-      if (err) onFail(err);
-      else onSucc( Object.create(DbConnDb2.Proto, { conn: { value: conn }, props: { value: props }, _schema: { value: null, writable: true } }) );
-    })
-  })
+  return Object.create(DbConnDb2.Proto, { pool: { value: pool }, props: { value: props }, _schema: { value: null, writable: true } });
 }
 DbConnDb2.Proto = {
   // end:   async function () { await this.client.end() },
   query: async function (q, args = []) {
-      let me = this;
       return new Promise((ok, failure) => {
-        me.conn.queryResult(q.trim().replace(/;$/, ''), args, (err, R) => {
-          if (err) {
-            failure(err);
-            return;
-          }
-          let cols = R.getColumnMetadataSync();
-          let data = R.fetchAllSync();
-          let rt = [], gt = []; // raw- and generaly type
-          cols
-          .map(f => [f.SQL_DESC_TYPE_NAME, ... (DbConnDb2.types[f.SQL_DESC_TYPE_NAME] || [])]) // put all values for type to one array
-          .forEach(([dbType, rawType, genType]) => {
-            if (!rawType) {
-              console.warn('Unsupported DB2 type, dbType: ' + dbType + '; query: ' + q); // TODO: what should be right logging for that
-              rt.push(dbType.toString());
-              gt.push('str'); // TODO: should convert all columns to string
-            } else {
-              rt.push(rawType);
-              gt.push(genType);
+        this.pool.open(this.props.connectString, (connErr, db) => {
+          if (connErr) { failure(connErr); return; }
+          db.queryResult(q.trim().replace(/;$/, ''), args, (err, R) => {
+            if (err) {
+              failure(err);
+              return;
             }
-          });
-          ok({ data: data, cols, types: gt, rawTypes: rt });
-        })
-      });
+            let cols = R.getColumnMetadataSync();
+            let data = R.fetchAllSync();
+            let rt = [], gt = []; // raw- and generaly type
+            cols
+            .map(f => [f.SQL_DESC_TYPE_NAME, ... (DbConnDb2.types[f.SQL_DESC_TYPE_NAME] || [])]) // put all values for type to one array
+            .forEach(([dbType, rawType, genType]) => {
+              if (!rawType) {
+                console.warn('Unsupported DB2 type, dbType: ' + dbType + '; query: ' + q); // TODO: what should be right logging for that
+                rt.push(dbType.toString());
+                gt.push('str'); // TODO: should convert all columns to string
+              } else {
+                rt.push(rawType);
+                gt.push(genType);
+              }
+            });
+            db.close();
+            ok({ data: data, cols: cols.map(c => c.SQL_DESC_CONCISE_TYPE), types: gt, rawTypes: rt });
+          })
+        });
+    })
   },
   transaction: async function () {
     const client = this.conn;
@@ -564,9 +628,16 @@ DbConnDb2.Proto = {
       client.query('BEGIN', [], err => {
         if (err) failure(err);
         else ok({
-          query: (sql, args = []) => client.query(sql, args)
-        , exec:   async (sql, args = []) => (await client.execute(sql, args)).rowsAffected // TODO error handling and rollback
-        , commit: async () => await client.query('COMMIT')
+          query: (sql, args = []) => (new Promise((ok, failure) => client.query(sql, args, (err, R) => err ? failure(err) : ok(R) )))
+        , exec:   async (sql, args = []) => ( // TODO error handling and rollback
+            new Promise((ok, failure) => {
+              client.prepare(sql, (err, stmt) => {
+                if (err) failure(err);
+                else stmt.execute(args, (err, R) => err ? failure(err) : ok(R)  )
+              })
+            })
+        )
+        , commit: async () => (new Promise((ok, failure) => client.query('COMMIT', [], (err, R) => (err ? failure(err) : ok())) ))
         })
       });
     });
