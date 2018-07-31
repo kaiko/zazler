@@ -1,11 +1,10 @@
 {
   "name": "zazler",
-  "version": "1.0.41",
-  "author": "Kaiko Kaur <kaiko.kaur@gmail.com> (http://www.zazler.com/)",
-  "homepage": "http://zazler.com/",
+  "version": "1.0.42",
+  "author": "Kaiko Kaur <kaiko.kaur@gmail.com>",
   "main": "app.js",
   "license": "Apache-2.0",
-  "description": "Speed up development process by exposing API from any SQL easily. Especially useful for Android/iPhone development.",
+  "description": "Speed up development process by declaring API from any SQL easily. Especially useful for Android/iPhone development.",
   "keywords": [
     "database",
     "rest",
@@ -35,7 +34,6 @@
     "express": "^4.16.3",
     "express-form-data": "^2.0.5",
     "md5": "^2.2.1",
-    "mocha": "^5.2.0",
     "mysql": "latest",
     "oracledb": "^2.2.0",
     "parsimmon": "^1.7.3",
@@ -44,7 +42,8 @@
     "wildcard": "^1.1.2"
   },
   "devDependencies": {
-    "request": "latest"
+    "request": "latest",
+    "mocha": "^5.2.0"
   },
   "engines": {
     "node": ">=8.0.0"

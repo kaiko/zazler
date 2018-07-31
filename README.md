@@ -2,44 +2,40 @@
 
 # Zazler
 
-Zazler builds sophisticated API from SQL structure allowing to make API calls safely.
+Zazler is express middleware that turns MySQL/PostgreSQL or SQLite into RESTful API folloging your declarations what to expose.
 
-Supported databases are MySQL, PostgreSQL and SQLite.
-
-# Motivation
-
-Custom API makes development process slow and clumsy. Every change to API may cause problems for existing API users. Worse than that - it takes time for backend developers to implement small changes.
-
-Zazler instead allows to define on backend which data may be accessed and you can customize API call on frontend. And this is safe, no direct SQL access.
+You don't have to write customized API anymore. Using SQL datastructure and your declared rules APIs are created on the fly. No Object-relational mapping.
 
 ## When to use
 
-  * API from mobile apps and any other platform (json, wsdl/soap)
-  * Very quickly share LIVE data to somebody (html, xml, csv)
+  * API from mobile apps and any other platform (SQL data is converted into JSON)
+  * Share live data (html, xml, csv). Can be imprted into excel, for example.
 
 ## Fast setup, no coding
 
 Zazler learns database schema and has already all kind of data output as json, xml, csv, html etc.
 
-Only thing you have to do is tell which tablefields and on what condition data is accessible. You do this by declarative rules, not programming or writing SQL queries.
+Only thing you have to do is tell which tables/fields can be accessed. You do this by declarative rules, not programming or writing SQL queries.
 
 # Getting started
 
-## "Hello wolrd"
+## "Hello world"
+
+To make API from table `hello`, you can do it like that:
 
 ```javascript
-let srv = require('express')();
-require('zazler')("file:///tmp/my.db", { read: '*' } )
-.then(api => {
-  srv.use('/my/', api.expressRequest);
-  srv.listen(80);
+let express = require('express')();
+require('zazler')("mysql://root:pass@127.0.0.1/dbname", { read: "hello" } )
+.then(sqlApi => {
+  express.use('/my/', sqlApi.expressRequest);
+  express.listen(80);
 });
 ```
 
-  * `tablename` content as json: `http://localhost/my/tablename.json`
-  * Row here id is 1: `http://localhost/my/tablename.json?where=id=1
+  * `hello` content as json: `http://localhost/my/hello.json`
+  * To query rows by id: `http://localhost/my/tablename.json?where=id=1`
 
-## Connecting
+## SQL Connections
 
   - `psql://user:pass@host:port/db`
   - `mysql://user:pass@host:port/db`
@@ -49,6 +45,8 @@ Additionally to URL style connection you may use objects. This is more dynamic b
 
   - `{ type: 'pg', hostname: '127.0.0.1', database: 'foo'}`
   - `{ type: 'my', hostname: '127.0.0.1', database: 'foo'}`
+
+For exact connection parameters take a look for libraries: [pg](https://www.npmjs.com/package/pg), [mysql](https://www.npmjs.com/package/mysql) and [sqlite](https://www.npmjs.com/package/sqlite)
 
 ## API requests
 
