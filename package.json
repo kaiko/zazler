@@ -1,6 +1,6 @@
 {
   "name": "zazler",
-  "version": "1.0.42",
+  "version": "1.0.44",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com>",
   "main": "app.js",
   "license": "Apache-2.0",
@@ -34,12 +34,14 @@
     "express": "^4.16.3",
     "express-form-data": "^2.0.5",
     "md5": "^2.2.1",
-    "mysql": "latest",
-    "oracledb": "^2.2.0",
+    "oracle": "^0.4.1",
     "parsimmon": "^1.7.3",
-    "pg": "latest",
     "sqlite": "latest",
     "wildcard": "^1.1.2"
+  },
+  "optionalDependencies": {
+    "mysql": "latest",
+    "pg": "latest"
   },
   "devDependencies": {
     "request": "latest",

@@ -435,7 +435,7 @@ DbConnLt.Proto = {
     const client = this.conn; // await Lite.open(this.props.filename || ':memory:', { Promise });
     // await client.run('BEGIN'); // FIXME: how to do transactions in :memory:
     return {
-      query: (sql, args = []) => client.query(sql, args)
+      query: (sql, args = []) => this.query(sql, args)
     , exec:  async (sql, args = []) => { // TODO error handling and rollback
         let {changes, lastID} = await client.run(sql, args);
         return changes;

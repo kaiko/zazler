@@ -1,27 +1,26 @@
 
-
 # Zazler
 
-Zazler is express middleware that turns MySQL/PostgreSQL or SQLite into RESTful API folloging your declarations what to expose.
+Stop writing customized APIs! Using SQL data structure and your declared rules, Zazler allows you to create APIs on the fly.
 
-You don't have to write customized API anymore. Using SQL datastructure and your declared rules APIs are created on the fly. No Object-relational mapping.
+Zazler is express middleware that turns MySQL/PostgreSQL or SQLite into RESTful API using your declarations for what to expose.  No object-relational mapping required.
 
 ## When to use
 
-  * API from mobile apps and any other platform (SQL data is converted into JSON)
-  * Share live data (html, xml, csv). Can be imprted into excel, for example.
+  * When you need an API for mobile apps and any other platform (SQL data is converted into JSON)
+  * When you want to share live data (html, xml, csv) - importing into Excel, for example.
 
-## Fast setup, no coding
+## Fast set-up, no coding
 
-Zazler learns database schema and has already all kind of data output as json, xml, csv, html etc.
+Zazler learns database schema and already includes many types of data output such as json, xml, csv, html, and more.
 
-Only thing you have to do is tell which tables/fields can be accessed. You do this by declarative rules, not programming or writing SQL queries.
+All you have to do is tell Zazler which tables/fields can be accessed. You do this by creating declarative rules, not by programming or writing SQL queries.
 
 # Getting started
 
 ## "Hello world"
 
-To make API from table `hello`, you can do it like that:
+Here’s how you would make an API from the table `hello` using Zazler:
 
 ```javascript
 let express = require('express')();
@@ -33,7 +32,7 @@ require('zazler')("mysql://root:pass@127.0.0.1/dbname", { read: "hello" } )
 ```
 
   * `hello` content as json: `http://localhost/my/hello.json`
-  * To query rows by id: `http://localhost/my/tablename.json?where=id=1`
+  * To query rows by id: `http://localhost/my/hello.json?where=id=1`
 
 ## SQL Connections
 
@@ -41,24 +40,25 @@ require('zazler')("mysql://root:pass@127.0.0.1/dbname", { read: "hello" } )
   - `mysql://user:pass@host:port/db`
   - `sqilte:///tmp/db.file`
 
-Additionally to URL style connection you may use objects. This is more dynamic because you can use every connection parameter depending on library. For postgresql it is library `pg` and for MySQL it is `mysql`.
+In addition to URL-style connections, you can use objects. This method is more dynamic because you can use every connection parameter depending on library. For postgresql, it is library pg and for MySQL it is mysql.
 
   - `{ type: 'pg', hostname: '127.0.0.1', database: 'foo'}`
   - `{ type: 'my', hostname: '127.0.0.1', database: 'foo'}`
 
-For exact connection parameters take a look for libraries: [pg](https://www.npmjs.com/package/pg), [mysql](https://www.npmjs.com/package/mysql) and [sqlite](https://www.npmjs.com/package/sqlite)
+For exact connection parameters, take a look at these libraries: [pg](https://www.npmjs.com/package/pg), [mysql](https://www.npmjs.com/package/mysql) and [sqlite](https://www.npmjs.com/package/sqlite)
+
 
 ## API requests
 
 Requests are `table.format?select=field1,field2&where=field1=1` where select and where
 
- - `http://127.0.0.1/api/table.json?where=id=10` − query by id (there is shorter version: `?id:=10` (yes, with colon)
- - `http://127.0.0.1/api/table.json?where=like(firstname,$L)&L=J%25` − query by text matching. Notice how where expression is using variable L.
- - `http://127.0.0.1/api/table.json?order=firstname` − for ordering data.
- - `http://127.0.0.1/api/table.json?limit=10` − for limiting output.
- - `http://127.0.0.1/api/table.json?select=firstname,lastname` − to select only some fields.
- - `http://127.0.0.1/api/table.json?select=concat(firstname,$spc,lastname)&spc=%20` − here SQL server does already more complicated work.
- - `http://127.0.0.1/api/table.json?group=IDparty&select=IDparty,count(*)` − to group data; you may want also use `having` parameter.
+  - `http://127.0.0.1/api/table.json?where=id=10` − query by id (there is shorter version: ?id:=10 (yes, with colon)
+  - `http://127.0.0.1/api/table.json?where=like(firstname,$L)&L=J%25` − query by text matching. Notice that the “where” expression is using variable L.
+  - `http://127.0.0.1/api/table.json?order=firstname` − for ordering data.
+  - `http://127.0.0.1/api/table.json?limit=10` − for limiting output.
+  - `http://127.0.0.1/api/table.json?select=firstname,lastname` − to select only some fields.
+  - `http://127.0.0.1/api/table.json?select=concat(firstname,$spc,lastname)&spc=%20` – here, the SQL server does more complicated work.
+  - `http://127.0.0.1/api/table.json?group=IDparty&select=IDparty,count(*) − to group data, you may want also use the `having` parameter.
 
 ## Limit database access
 
@@ -80,7 +80,13 @@ Requests are `table.format?select=field1,field2&where=field1=1` where select and
     });
 ```
 
-`read` can use wildchars and exclusion: `{read: "* -foo"}` makes whole database is readable except table `foo`.
+`read` can use wildchars and exclusion: `{read: "* -foo"}` makes the whole database readable except table `foo`.
+
+# What users say
+
+## Tiit Remmel
+
+Our company have been using Zazler for a while and could not imagine backend without Zazler. It's simple to use and configure, but still capable for extremly advanced solutions. I don't see point of using any other backend language - Zazler is just perfect!
 
 # Similar projects
 
