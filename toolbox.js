@@ -11,7 +11,7 @@ Map.prototype.setWith = function (key, val, fn) {
   else this.set(key, val); 
 }
 
-Map.prototype.fromArray = (ls, key, valFn) => ls.reduce((m, i) => m.set(i[key], valFn ? valFn(i) : val), new Map())
+Map.fromArray = (ls, key, valFn) => ls.reduce((m, i) => m.set(i[key], valFn ? valFn(i) : i), new Map())
 
 breakOn =
   (str, on) => (pos => pos === -1 ? [str] : [str.substr(0,pos), str.substr(pos+1) ])( str.indexOf(on) )

@@ -1,6 +1,6 @@
 {
   "name": "zazler",
-  "version": "1.0.44",
+  "version": "1.0.49",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com>",
   "main": "app.js",
   "license": "Apache-2.0",
@@ -34,7 +34,6 @@
     "express": "^4.16.3",
     "express-form-data": "^2.0.5",
     "md5": "^2.2.1",
-    "oracle": "^0.4.1",
     "parsimmon": "^1.7.3",
     "sqlite": "latest",
     "wildcard": "^1.1.2"

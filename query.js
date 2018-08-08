@@ -1008,7 +1008,7 @@ function jsToQVal(v) {
   if (typeof v === 'number') return new QFloat(v);
   if (typeof v === 'object' && v.isQValue) return v;
   if (typeof v === 'undefined') return qNull; // oh, well...
-  throw "Can't convert value to QVal (" + JSON.stringify(v) + ")";
+  throw new Error("Can't convert value to QVal (" + JSON.stringify(v) + ")");
 }
 
 module.exports = { WriteRule, jsToQVal, Select: QSelect, expression: s => QParser.value.tryParse(s) }

@@ -1,11 +1,16 @@
 header('SOAPAction', '""');
 contentType('text/xml');
 
-normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/gi, '_') : x
-escXml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c]) : unsafe;
+normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/gi, '_') : x;
+toString = b => (typeof b !== 'undefined' && b !== null && b.toString) ? b.toString() : b; // this is because of buffer actually
+escXml = unsafe =>
+  typeof unsafe !== 'string' ? unsafe : // if not string, leave it as is
+     unsafe.replace(/[<>'"&]/g, c => escXml.chars[c]) // usual xml entities
+            .replace(/[\000-\032]/g, c => "&#x" + c.charCodeAt().toString(16).toUpperCase() + ';'); // control characters
 escXml.chars = {
-    '<': '&lt'
-  , '>': '&gt'
+    '<': '&lt;'
+  , '>': '&gt;'
+  , "&": '&amp;'
   , "'": '&apos;'
   , '"': '&quot;'}
 
@@ -27,7 +32,7 @@ vars.soapHeader +
 if (! ['insert','update','delete'].includes(vars.servtype)) {
   O += result.data.map(r => (
     '<row>\n' +
-      cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '">' + escXml(r[c]) + '</' + c + '>').join('\n') +
+      cols.map((c,ci) => '<' + c + ' type="' + ((x => T[x] || x)(result.types[ci])) + '"' + (r[c] === null ? '/>' : ('>' + escXml(toString(r[c])) + '</' + c + '>'))).join('\n') +
     '\n</row>'
   )).join("\n")
 } else {

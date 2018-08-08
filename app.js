@@ -212,6 +212,47 @@ AppPrototype = {
     }
   },
 
+  post: async function (tableAs, postVars, getVars, postInput, user, pass) {
+
+    let [tq, fmt] = breakOn(tableAs, '.');
+    let [table, as] = breakOn(tq, '@');
+    let R = { table, as, format: null, user: null, pass: null, req: { user: null, pass: null, pipe: null, format: null, isMain: true, url: null, isPost: false }, vars: getVars, meta: {}, cookie: {} };
+    let me = this;
+
+    let _auth = null;
+    R.meta = {
+      cookie: async () => ({})
+    , req:    async () => Object.map(R.req, jsToQVal)
+    , auth:   async () => {
+        if (!_auth) {
+            if (!me.auth) throw new Exception(104, new Error());
+            let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q,
+                  Object.assign({}, R.meta, { auth: async () => { throw new Exception(105, new Error(), { auth: conf.auth })  } }),
+                  unprotectedSchema, [], R
+                )).data[0] || null;
+        }
+        if (!_auth) throw new NeedAuth();
+        return _auth;
+      }
+    }
+    
+    let sqlResult;
+    try { sqlResult = await this.runPost(R.table, R.vars, R.req, R.meta, await this.schema(), postInput, R); }
+    catch (someErr) {
+      if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
+      else { this.evError(someErr); throw someErr; }
+    }
+
+    if (!fmt) return sqlResult;
+
+    try { return (await sqlResult.format(fmt)).text(); }
+    catch (someErr) {
+      if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
+      else { this.evError(someErr); throw someErr; }
+    }
+  },
+
   // returns { headers: [ {key: val }], text: return content, code: 200 }
   // code can be "unauthorized" (401)
   // if error/exception emerges it is thrown
@@ -251,7 +292,7 @@ AppPrototype = {
     let _auth = null, _cookie = null, _req = null;
     R.meta = {
       cookie: async () => { if (!_cookie) _cookie = Object.map(cookies||{}, jsToQVal); return _cookie; }
-    , req:    async () => Object.map(R.req, jsToQVal)
+    , req:    async () => R.req // Object.map(R.req, jsToQVal)
     , auth:   async () => {
         if (!_auth) {
             if (!me.auth) throw new Exception(104, new Error());
@@ -444,9 +485,8 @@ AppPrototype = {
     }
     return res;
   },
-  runPost: async function (table, initVars, req, meta, sch, irows, dreq, files) {
+  runPost: async function (table, initVars, req, meta, sch, irows, dreq, files = {}) {
     let me = this, results = [], affected = [], rules;
-    files = files || {};
 
     let as, alias = this.alias.find(a => a.name === table);
     if (alias) {
@@ -727,13 +767,15 @@ AppPrototype = {
 
     S = S.travVar(V => {
       if (vars.hasOwnProperty(V.v)) return jsToQVal(vars[V.v]);
-      else if (dreq.opts.schemaOnly) return V.toNull();
+      else if ((dreq.opts||{}).schemaOnly) return V.toNull();
       else if (!this.varsWithout$) throw ("Variable missing: " + V.v);
     })
 
     // test for protected fields;
-    let needAuth = false, protFields = Set.fromArray(seenFields.filter(e => e.prot).map(e => e.table +'.'+e.name));
-    S = S.travField(f => { if (protFields.has(f.table +'.' + f.field)) needAuth = true; return f; });
+    let needAuth = false
+      , protFields = Set.fromArray(seenFields.filter(e => e.prot).map(e => e.table +'.'+e.name))
+      , asMap = Map.fromArray(S.tables(), 'as', i => i.name);
+    S = S.travField(f => { if (protFields.has(asMap.get(f.table) +'.' + f.field)) needAuth = true; return f; });
     if (needAuth && !(await meta.auth())) throw new NeedAuth();
 
     let metas = {};

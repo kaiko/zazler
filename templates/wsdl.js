@@ -3,10 +3,15 @@
 contentType('text/xml');
 
 normXml = x => typeof x === 'string' ? x.replace(/[^a-z0-9]+/ig, '_') : x;
-escXml = unsafe => typeof unsafe === 'string' ? unsafe.replace(/&/g, '&amp;').replace(/[<>'"]/g, c => escXml.chars[c]) : unsafe;
+toString = b => (typeof b !== 'undefined' && b !== null && b.toString) ? b.toString() : b; // this is because of buffer actually
+escXml = unsafe =>
+  typeof unsafe !== 'string' ? unsafe : // if not string, leave it as is
+     unsafe.replace(/[<>'"&]/g, c => escXml.chars[c]) // usual xml entities
+            .replace(/[\000-\032]/g, c => "&#x" + c.charCodeAt().toString(16).toUpperCase() + ';'); // control characters
 escXml.chars = {
-    '<': '&lt'
-  , '>': '&gt'
+    '<': '&lt;'
+  , '>': '&gt;'
+  , "&": '&amp;'
   , "'": '&apos;'
   , '"': '&quot;'}
 
