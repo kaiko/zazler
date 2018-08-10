@@ -374,7 +374,7 @@ AppPrototype = {
         , headers: fmtResult.headers.concat(fmtResult.contentType ? [{ key: 'content-type', value: fmtResult.contentType}] : [])
         , body: !R.pipe
           ? fmtResult.out 
-          : await (this.pipes[R.pipe])(fmtResult.out, t => res.type(t),Object.assign({}, {...R.req, ...{ cookie: cookies}}, { vars: R.vars }))
+          : await (this.pipes[R.pipe])(fmtResult.out, t => fmtResult.headers.concat([{key: 'content-type', value : t }]),Object.assign({}, {...R.req, ...{ cookie: cookies}}, { vars: R.vars }))
       }
     }
   },
@@ -478,7 +478,7 @@ AppPrototype = {
     res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
-      if (dreq.opts.schemaOnly) return 0;
+      if ((dreq.opts||{}).schemaOnly) return 0;
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
       return parseInt((await cn.query(csql)).data[0].count, 10);
