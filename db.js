@@ -226,7 +226,6 @@ DbConnPg.types = {
   , 700  : [ 'real'    , 'float' ] // TODO is this really 'real'? check
   , 701  : [ 'double precision', 'float' ]
   , 16   : [ 'boolean', 'bool' ]
-  , 1184 : [ 'date', 'date']
   , 25   : [ 'text', 'str']
   , 1043 : [ 'varchar', 'str']
   , 114  : [ 'json', 'str']
@@ -375,7 +374,7 @@ DbConnMy.types = {
 , [0x04]: [ 'float'     , 'float']     // MYSQL_TYPE_FLOAT          0x04   Implemented by ProtocolBinary::MYSQL_TYPE_FLOAT
 , [0x05]: [ 'double'    , 'float']     // MYSQL_TYPE_DOUBLE         0x05   Implemented by ProtocolBinary::MYSQL_TYPE_DOUBLE
 , [0x06]: [ 'null'      , 'str']       // MYSQL_TYPE_NULL           0x06   Implemented by ProtocolBinary::MYSQL_TYPE_NULL FIXME
-, [0x07]: [ 'timestamp' , 'timestamp'] // MYSQL_TYPE_TIMESTAMP      0x07   Implemented by ProtocolBinary::MYSQL_TYPE_TIMESTAMP
+, [0x07]: [ 'timestamp' , 'datetime']  // MYSQL_TYPE_TIMESTAMP      0x07   Implemented by ProtocolBinary::MYSQL_TYPE_TIMESTAMP
 , [0x08]: [ 'longlong'  , 'int']       // MYSQL_TYPE_LONGLONG       0x08   Implemented by ProtocolBinary::MYSQL_TYPE_LONGLONG
 , [0x09]: [ 'int24'     , 'int']       // MYSQL_TYPE_INT24          0x09   Implemented by ProtocolBinary::MYSQL_TYPE_INT24
 , [0x0a]: [ 'date'      , 'date']      // MYSQL_TYPE_DATE           0x0a   Implemented by ProtocolBinary::MYSQL_TYPE_DATE

@@ -390,7 +390,7 @@ AppPrototype = {
       .map(a => { let [k,v] = breakOn(a,'='); return { key: decodeURIComponent(k), val: decodeURIComponent(v)}; })
       .reduce((a,c) => Object.assign(a,{[c.key]: c.val}),{});
 
-    let post = null, files = null, user = null, pass = null;
+    let post = null, files = {}, user = null, pass = null;
     if (this.auth && this.auth.type === 'basic')
       (([u,p]) => { if (u) { user = u; pass = p; } })( breakOn( btoa( ((req.get('Authorization') || '').match(/^Basic (.*)/) || [])[1] || ''), ':' ) );
 
