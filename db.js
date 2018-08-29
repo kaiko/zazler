@@ -117,6 +117,10 @@ async function DbConn(props) {
 async function DbConnPg(props) {
   const pg = require('pg');
 
+  pg.types.setTypeParser(1082, x => x); // date
+  pg.types.setTypeParser(1114, x => x); // timestamp without time zone
+  pg.types.setTypeParser(1184, x => x); // timestamp with time zone
+
   // numbers must be handled as numbers, not strings
   pg.types.setTypeParser(20, parseInt);
   pg.types.setTypeParser(21, parseInt);
@@ -233,6 +237,7 @@ DbConnPg.types = {
   , 705  : [ 'text', 'str']    /// TODO NOT SURE
   , 1042 : [ 'bpchar', 'str']
   , 17   : [ 'bytea', 'str']
+  , 1186 : [ 'interval', 'duration']
 /*
   , 1000    : parseArray);
   , 1007    : parseArray);
@@ -264,7 +269,6 @@ DbConnPg.types = {
   , 1115 : [ parseDateArray); // timestamp without time zone[]
   , 1182 : [ parseDateArray); // _date
   , 1185 : [ parseDateArray); // timestamp with time zone[]
-  , 1186 : [ parseInterval);
   , 17   : [ parseByteA);
   , 114  : [ JSON.parse.bind(JSON)); // json
   , 3802 : [ JSON.parse.bind(JSON)); // jsonb
@@ -311,7 +315,7 @@ DbConnPg.queryConstraints =
 
 async function DbConnMy(props) {
   const my = require('mysql');
-  return Object.create(DbConnMy.Proto, { props: { value: props }, pool: { value: my.createPool(props) }, _schema: { value: null, writable: true } });
+  return Object.create(DbConnMy.Proto, { props: { value: props }, pool: { value: my.createPool(Object.assign({dateStrings: true}, props)) }, _schema: { value: null, writable: true } });
 }
 DbConnMy.Proto = {
   // end:   async function () { await this.client.end() },
