@@ -458,6 +458,8 @@ AppPrototype = {
       as    = as || alias.name;
       vars  = Object.assign({}, alias.vars, vars, alias.const);
       dreq.vars = vars;
+      dreq.table = table;
+      dreq.as = as;
     }
     if (table === '_schema') await this.schema(); // just to initialize table if not done already
 

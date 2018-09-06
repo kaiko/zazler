@@ -77,8 +77,8 @@ let QParser = P.createLanguage({
 QShortFn = {
     ":": (a,b) => new QOp(a, [["=", b]])
   , "!": (a,b) => new QOp(a, [["!=", b]])
-  , ">": (a,b) => new QOp(a, [["!=", b]])
-  , "<": (a,b) => new QOp(a, [["!=", b]])
+  , ">": (a,b) => new QOp(a, [[">", b]])
+  , "<": (a,b) => new QOp(a, [["<", b]])
   , "~": (a,b) => new QFn("ilike", null, [a,b])
 }
 

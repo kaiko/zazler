@@ -626,39 +626,39 @@ DbConnDb2.Proto = {
     })
   },
   transaction: async function () {
-    const client = this.conn;
-    return new Promise((ok, failure) => {
-      client.query('BEGIN', [], err => {
+    return new Promise((ok, failure) => { this.pool.open(this.props.connectString, (connErr, db) => {
+      if (connErr) { failure(connErr); return; }
+      db.query('BEGIN', [], err => {
         if (err) failure(err);
         else ok({
-          query: (sql, args = []) => (new Promise((ok, failure) => client.query(sql, args, (err, R) => err ? failure(err) : ok(R) )))
+          query: (sql, args = []) => (new Promise((ok, failure) => db.query(sql, args, (err, R) => err ? failure(err) : ok(R) )))
         , exec:   async (sql, args = []) => ( // TODO error handling and rollback
             new Promise((ok, failure) => {
-              client.prepare(sql, (err, stmt) => {
+              db.prepare(sql, (err, stmt) => {
                 if (err) failure(err);
                 else stmt.execute(args, (err, R) => err ? failure(err) : ok(R)  )
               })
             })
         )
-        , commit: async () => (new Promise((ok, failure) => client.query('COMMIT', [], (err, R) => (err ? failure(err) : ok())) ))
+        , commit: async () => (new Promise((ok, failure) => db.query('COMMIT', [], (err, R) => (err ? failure(err) : ok())) ))
         })
       });
-    });
+    }) });
   },
   schema: async function () {
     if (!this._schema) await this.learn();
     return this._schema;
   },
   learn: async function () {
-    const client = this.conn;
     let sch = [], curTable = '', base = { read: false, write: false, hidden: false, prot: false }, tableDone = 0;
-    return new Promise((ok, failure) => {
-      client.query(DbConnDb2.queryTables, [], (err, tables) => {
+    return new Promise((ok, failure) => { this.pool.open(this.props.connectString, (connErr, db) => {
+      if (connErr) { failure(connErr); return; }
+      db.query(DbConnDb2.queryTables, [], (err, tables) => {
         if (err) { failure(err); return; }
         else {
           for (let t = 0; t < tables.length; t++) {
             let tname = tables[t].TABNAME;
-            client.query(DbConnDb2.queryFields, [ tname ], (err, cols) => {
+            db.query(DbConnDb2.queryFields, [ tname ], (err, cols) => {
               if (err) { failure(err); return; }
 
               sch.push(Object.assign({_: 'table', comment: '', name:  tname }, base));
@@ -671,7 +671,7 @@ DbConnDb2.Proto = {
           }
         }
       })
-    })
+    }) })
   }
 };
 DbConnDb2.queryTables = "select tabname from syscat.tables";
