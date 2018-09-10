@@ -752,14 +752,13 @@ function makeSet (set, table, schema, inputRow) {
     return QSet.fromObject(table, inputRow).filter(wrFields).appendSet(set).filter(allFields);
 }
 
-async function fillUp(q, vars, custFn, meta, evArg) {
+async function fillUp(q, vars, custFn, meta, evArg, tokensToVars = false) {
     let lets = letReplacer(vars);
 
     q = q
       .travFunc (lets.func)
       .travToken(lets.vars)
-      .travFunc (custFnReplacer(custFn, evArg))
-      .travToken(T => typeof vars[T.token] === 'undefined' ? T : jsToQVal(vars[T.token]));
+      .travFunc (custFnReplacer(custFn, evArg));
 
     q = await q.travFieldA(async f => {
         let T = meta[f.table] ? await meta[f.table]() : null;
@@ -823,8 +822,17 @@ class WriteRule {
       else throw "Unknown text in expression: " + T.token;
     }
 
-    let fill = async q => (await fillUp(q, vars, custFn, meta, evArg)).travField(travNew).travVar(varFn).travToken(tokenFn);
-    let isMatch = (await this.tester.all('SELECT ' + new QAs(this.on.travField(travNew).travVar(varFn).travToken(tokenFn), new QName('t')).sqlSnippet(SqlLt))) [0].t;
+    let fill = async q =>
+      (await fillUp(q, vars, custFn, meta, evArg))
+       .travField(travNew)
+       .travVar(varFn)
+       .travToken(tokenFn);
+    let isMatch;
+    if ((v => v.bool && v.bool === true)(this.on.describe())) // if it is determined to be match, then let's go without SQL query 
+      isMatch = true;
+    else
+      isMatch = (await this.tester.all('SELECT ' + new QAs(this.on.travField(travNew).travVar(varFn).travToken(tokenFn), new QName('t')).sqlSnippet(SqlLt))) [0].t;
+
     if (!isMatch) return null;
     else switch(this.action) {
       case 'delete' : return await fill(new QDelete (this.table, this.where)); break;
