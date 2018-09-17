@@ -752,7 +752,7 @@ function makeSet (set, table, schema, inputRow) {
     return QSet.fromObject(table, inputRow).filter(wrFields).appendSet(set).filter(allFields);
 }
 
-async function fillUp(q, vars, custFn, meta, evArg, tokensToVars = false) {
+async function fillUp(q, vars, custFn, meta, evArg) {
     let lets = letReplacer(vars);
 
     q = q

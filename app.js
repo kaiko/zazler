@@ -272,7 +272,7 @@ AppPrototype = {
     //if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
     //  throw new Exception(302, new Error(), { table: table }); // TODO: look for joins and alias
 
-    let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post } };
+    let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post }, files: {} };
 
     R.opts = Object.assign({}, Opts.def, vars.opts ? Opts.parse(vars.opts) : {});
 
