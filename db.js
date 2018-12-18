@@ -195,8 +195,7 @@ DbConnPg.Proto = {
 */
 
     let client = await this.pool.connect();
-    let tables = await client.query(DbConnPg.queryTables);
-    let fields = await client.query(DbConnPg.queryFields);
+    const [tables, fields] = await Promise.all([ client.query(DbConnPg.queryTables) , client.query(DbConnPg.queryFields) ]);
     // let constr = this.query(DbConnPg.queryConstraints)]);
 
     let T = DbConnPg.types;
@@ -389,7 +388,7 @@ DbConnMy.types = {
 , [0x0d]: [ 'year'      , 'int']       // MYSQL_TYPE_YEAR           0x0d   Implemented by ProtocolBinary::MYSQL_TYPE_YEAR
 , [0x0e]: [ 'date'      , 'date']      // MYSQL_TYPE_NEWDATE [a]    0x0e   see Protocol::MYSQL_TYPE_DATE
 , [0x0f]: [ 'varchar'   , 'str']       // MYSQL_TYPE_VARCHAR        0x0f   Implemented by ProtocolBinary::MYSQL_TYPE_VARCHAR
-, [0x10]: [ 'bit'       , 'int']       // MYSQL_TYPE_BIT            0x10   Implemented by ProtocolBinary::MYSQL_TYPE_BIT
+, [0x10]: [ 'bit'       , 'str']       // MYSQL_TYPE_BIT            0x10   Implemented by ProtocolBinary::MYSQL_TYPE_BIT
 , [0x11]: [ 'timestamp' , 'datetime']  // MYSQL_TYPE_TIMESTAMP2 [a] 0x11   see Protocol::MYSQL_TYPE_TIMESTAMP
 , [0x12]: [ 'datetime'  , 'datetime']  // MYSQL_TYPE_DATETIME2 [a]  0x12   see Protocol::MYSQL_TYPE_DATETIME
 , [0x13]: [ 'time'      , 'time']      // MYSQL_TYPE_TIME2 [a]      0x13   see Protocol::MYSQL_TYPE_TIME
@@ -701,7 +700,7 @@ DbConnDb2.types =
 ,  "DATE" : [ "DATE", "date" ]
 ,  "TIME" : [ "TIME", "time" ]
 ,  "XML" : [ "XML", "str" ]
-,  "TIMESTMP" : [ "TIMESTAMP", "datetime" ]
+,  "TIMESTAMP" : [ "TIMESTAMP", "datetime" ]
 ,  "TIMESTAMP WITHOUT TIME ZONE" : [ "TIMESTAMP WITHOUT TIME ZONE", "datetime" ]
 ,  "TIMESTAMP WITH TIME ZONE" : [ "TIMESTAMP WITH TIME ZONE", "datetime" ]
 };

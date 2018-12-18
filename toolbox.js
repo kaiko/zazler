@@ -1,4 +1,4 @@
-
+const fs = require('fs');
 
 if (!Object.values) Object.values = o => Object.keys(o).map(k => o[k]);
 Object.map  =       (o, fn) => { let i = 0, r = {}; for (let k in o) r[k] =       fn(o[k], k, i++); return r; }
@@ -18,7 +18,33 @@ breakOn =
 
 udec = decodeURIComponent
 
-module.exports = { breakOn,
+function move(oldPath, newPath, callback) {
+    fs.rename(oldPath, newPath, err => {
+        if (err) {
+            if (err.code === 'EXDEV') {
+                copy();
+            } else {
+                callback(err);
+            }
+            return;
+        }
+        callback();
+    });
+
+    const copy = () => {
+        let readStream = fs.createReadStream(oldPath);
+        let writeStream = fs.createWriteStream(newPath);
+
+        readStream.on('error', callback);
+        writeStream.on('error', callback);
+
+        readStream.on('close', () => fs.unlink(oldPath, callback));
+
+        readStream.pipe(writeStream);
+    }
+}
+
+module.exports = { breakOn, move,
   trace:  (v, mark) => { console.log(mark ? mark + '\n' + v + '\n/' + mark : v); return v; },
   zipObject: (lsKeys, lsValues) => lsKeys.reduce((k,o,i) => Object.assign(o, {[k]: lsValues[i]}), {}),
   getBody: req => new Promise(ok => { let b = ''; req.on('data', c => b += c); req.on('end', () => ok(b)) }),

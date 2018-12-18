@@ -207,7 +207,7 @@ QFn.prototype = protoQ({
 , travVar   : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travVar(fn))); }
 , travToken : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travToken(fn))); }
 , travField : function (fn) { return new QFn(this.name, this.inf, this.args.map(a => a.travField(fn))); }
-, travFunc  : function (fn) { let fn_ = fn(this); return fn_ === this ? new QFn(this.name, this.info, this.args.map(a => a.travFunc(fn))) : fn_; }
+, travFunc  : function (fn) { let fn_ = fn(this); return fn_ === this ? new QFn(this.name, this.inf, this.args.map(a => a.travFunc(fn))) : fn_; }
 , travVarA  : async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travVarA(fn)))); }
 , travTokenA: async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travTokenA(fn)))); }
 , travFieldA: async function (fn) { return new QFn(this.name, this.inf, await Promise.all(this.args.map(a => a.travFieldA(fn)))); }
@@ -230,7 +230,7 @@ QAs.prototype = protoQ({
 ,  travTokenA : async function (fn) { return new QAs(await this.v.travTokenA(fn), this.as); }
 ,  travFieldA : async function (fn) { return new QAs(await this.v.travFieldA(fn), this.as); }
 ,  travFuncA  : async function (fn) { return new QAs(await this.v.travFuncA (fn), this.as);  }
-,  describe   : function () { return Object.assing({}, this.v.describe(), { as: this.as }) }
+,  describe   : function () { return Object.assign({}, this.v.describe(), { as: this.as }) }
 ,  isSame     : function (el) { return el === this || (this.v.isSame(el.v) && this.as === el.as) } // TODO: check if `el` is QAs
 })
 

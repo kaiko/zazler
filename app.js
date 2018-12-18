@@ -18,7 +18,7 @@ const Opts = require('./opts');
 // to test if function is sync or async
 const AsyncFunction = (async () => {}).constructor;
 
-const { breakOn, getBody, btoa, trace } = require('./toolbox');
+const { breakOn, getBody, btoa, trace, move } = require('./toolbox');
 
 const exceptionRegister = {
 // id,  A - isAppFatal, R - isReqFatal, w - isWrapper (if it not app or req fatal, it is more like warning)
@@ -269,7 +269,7 @@ AppPrototype = {
     [table, as] = breakOn(table, '@');
 
     if (!format) throw new Exception(300, new Error(), { template: template, templateDirs: this.tmplDirs });
-    //if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
+    // if ( !['_empty', '_schema', '_meta', '_single'].includes(table) && !sch.find(e => e._ === 'table' && e.name === table))
     //  throw new Exception(302, new Error(), { table: table }); // TODO: look for joins and alias
 
     let R = { table, as, format, user, pass, opts: {}, vars, meta: {}, cookie: {}, req: { ...extra, table, format, user, pass, pipe: null, isMain: true, isPost: !!post }, files: {} };
@@ -327,6 +327,10 @@ AppPrototype = {
     R.table  = arg.req.table  || R.table;
     R.format = arg.req.format || R.format;
 
+    if (R.req.isPost && typeof post === 'string') {
+      post = await inputRows(this.prsDirs, R.format, post, this.scriptContext( R.format, R.table, R.as, R.vars, R.req, R.meta, sch))
+    }
+
     let fmtResult = {}, sqlResult;
     try {
         sqlResult = R.req.isPost
@@ -370,7 +374,7 @@ AppPrototype = {
     } else if (fmtResult.error) {
       throw fmtResult.error;
     } else {
-      return { status: 200
+      return { status: fmtResult.status || 200
         , headers: fmtResult.headers.concat(fmtResult.contentType ? [{ key: 'content-type', value: fmtResult.contentType}] : [])
         , body: !R.pipe
           ? fmtResult.out 
@@ -413,7 +417,7 @@ AppPrototype = {
       }
       else {
         let [table, format] = breakOn(req.path.split('/').pop(), '.');
-        post = await inputRows(this.prsDirs, format, await getBody(req));
+        post = await getBody(req); // await inputRows(this.prsDirs, format, await getBody(req));
       }
     }
 
@@ -483,7 +487,7 @@ AppPrototype = {
       if ((dreq.opts||{}).schemaOnly) return 0;
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
-      return parseInt((await cn.query(csql)).data[0].count, 10);
+      return parseInt(((await cn.query(csql)).data[0] || { count: 0 }).count, 10);
     }
     return res;
   },
@@ -561,10 +565,8 @@ AppPrototype = {
         const [dir,nameExpr] = [meta['upload-dir'], meta['upload-name']]; if (!dir || !nameExpr) return;
         let name = expression(nameExpr).travField(travNew).travField(f => f.table === 'ret' ? jsToQVal((ret.data[0]||{})[f.field] || null) : f).sqlSnippet(SqlJsPseudo);
         let toPath = path.join(dir, name);
-        // console.log(dir, name, toPath);
-        // util.promisify(fs.rename)(file[field].path, toPath);
-        return new Promise((ok) => {
-          fs.rename(files[field].path, toPath, () => {
+        return new Promise(ok => {
+          move(files[field].path, toPath, () => {
             let evFn = me.events.onAfterUpload || [];
             let arg = Object.assign({}, dreq, { path: toPath });
             let callNr = 0, callIt = () => { if (callNr === evFn.length) ok(); else evFn(() => { callNr++; callIt() }, arg); }
@@ -586,20 +588,8 @@ AppPrototype = {
       { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
   },
 
-  format: async function (queryResult, format, table, tableAs, vars, req, meta, sch) {
-
-    let F = await this.findTemplate(format);
-    let me = this, result = {
-      out: '',
-      headers: [],
-      text: () => {
-        if (result.error) {
-          me.evError(result.error);
-          throw new Exception(503, result.error, { format: format, vars: vars, table: table });
-        } else return result.out
-      }
-    }; // this is returned
-
+  scriptContext: function (format, table, tableAs, vars, req, meta, sch) {
+    const me = this;
     let evArg = Object.assign({}, req,
         { req: Object.assign({}, {table, tableAs, format, vars}, req)
         , vars: vars
@@ -627,17 +617,36 @@ AppPrototype = {
         }
     })
 
+    return Object.assign
+    ( evArg
+    , { console }
+    , Object.map(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } ));
+  },
+
+  format: async function (queryResult, format, table, tableAs, vars, req, meta, sch) {
+
+    let F = await this.findTemplate(format);
+    let me = this, result = {
+      out: '',
+      headers: [],
+      text: () => {
+        if (result.error) {
+          me.evError(result.error);
+          throw new Exception(503, result.error, { format: format, vars: vars, table: table });
+        } else return result.out
+      }
+    }; // this is returned
+
     return new Promise((ok, bad) => {
-      F.script.runInNewContext(Object.assign({}, evArg, F.ctx
-        , Object.map(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } )
-        , { console: console
-        ,   result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
+      F.script.runInNewContext(Object.assign({}, this.scriptContext(format, table, tableAs, vars, req, meta, sch), F.ctx
+        , { result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
         ,   contentType: (t,c) => result.contentType = t
+        ,   httpStatus : (n  ) => result.status = n
         ,   header     : (k,v) => result.headers.push({ key: k, value: v})
         ,   __success__: ok
         ,   __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
-        ,   print:   x => { if (x !== undefined && x !== null) result.out += x; }
-        ,   printLn: x => { result.out += x; }
+        ,   print:   x => { if (x !== undefined && x !== null) result.out += Buffer.isBuffer(x) ? x.toString() : x; }
+        ,   printLn: x => { result.out += Buffer.isBuffer(x) ? x.toString() : x; }
         }));
     })
     .then(() => result).catch(e => { this.evError(e); result.error = e; return result; });
@@ -880,7 +889,7 @@ AppPrototype = {
   }
 }
 
-async function inputRows(dirs, fmt, body) {
+async function inputRows(dirs, fmt, body, context = {}) {
   let rd = util.promisify(fs.readdir);
   let rf = util.promisify(fs.readFile);
   let ls = [];
@@ -893,7 +902,13 @@ async function inputRows(dirs, fmt, body) {
   let scriptCode = await rf(f.dir + '/' + f.file, 'utf8');
   let script = new VM.Script('(async function () { try { ' + scriptCode + '\n__success__(); } catch (E) { __failure__(E); } })()');
   return new Promise((ok, bad) => 
-    script.runInNewContext({ input: body, console: console, result: r => irows = r, __success__: ok, __failure__: e => { console.error(e); throw e; bad(e); } })
+    script.runInNewContext(Object.assign(context,
+    { input: body
+    , console: console
+    , result: r => irows = r
+    , __success__: ok
+    , __failure__: e => { console.error(e); throw e; bad(e); }
+    }))
   ).then(() => {
       if (!Array.isArray(irows)) throw "Input rows must be array of objects";
       irows.forEach(i => { if (typeof i !== 'object' || !i) throw "Input rows must be array of objects"; } );
