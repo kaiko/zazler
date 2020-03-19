@@ -1,4 +1,5 @@
 const fs = require('fs');
+const util = require('util');
 
 if (!Object.values) Object.values = o => Object.keys(o).map(k => o[k]);
 Object.map  =       (o, fn) => { let i = 0, r = {}; for (let k in o) r[k] =       fn(o[k], k, i++); return r; }
@@ -51,6 +52,7 @@ module.exports = { breakOn, move,
   btoa: s => new Buffer(s, 'base64').toString('binary'),
   parseBool: s => ['false', 'no', '0'].includes(s.toString().toLowerCase()) ? false : !!s,
   uriArgs: q => !q ? {} :
-      q.split('&').map(a => breakOn(a, '=')).map(([k,v]) => [udec(k), udec(v)]).reduce( (a, [k,v]) => Object.assign(a, {[k]: v}), {} )
+      q.split('&').map(a => breakOn(a, '=')).map(([k,v]) => [udec(k), udec(v)]).reduce( (a, [k,v]) => Object.assign(a, {[k]: v}), {} ),
+  isPending: promise => util.inspect(promise) === 'Promise { <pending> }' // ugly ugly stuff
 }
 

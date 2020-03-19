@@ -171,7 +171,7 @@ AppPrototype = {
 
   meta: function (t, f = null) { return f ? (this.metaF[t]||{})[f] || null : this.metaT[t] || null; },
 
-  query: async function(tableAs, vars, user, pass) {
+  query: async function(tableAs, vars, user, pass, cancelCall) {
 
     let [tq, fmt] = breakOn(tableAs, '.');
     let [table, as] = breakOn(tq, '@');
@@ -188,7 +188,7 @@ AppPrototype = {
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
             _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q,
                   Object.assign({}, R.meta, { auth: async () => { throw new Exception(105, new Error(), { auth: conf.auth })  } }),
-                  unprotectedSchema, [], R
+                  unprotectedSchema, [], R, cancelCall
                 )).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
@@ -197,8 +197,9 @@ AppPrototype = {
     }
     
     let sqlResult;
-    try { sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), this.filt, R.req); }
+    try { sqlResult = await this.runSelect(R.table, R.as, R.vars, R.meta, await this.schema(), this.filt, R.req, cancelCall); }
     catch (someErr) {
+      if ((someErr || {}).cancelCall) throw someErr;
       if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
       else { this.evError(someErr); throw someErr; }
     }
@@ -212,7 +213,7 @@ AppPrototype = {
     }
   },
 
-  post: async function (tableAs, postVars, getVars, postInput, user, pass) {
+  post: async function (tableAs, postVars, getVars, postInput, user, pass, cancelCall) {
 
     let [tq, fmt] = breakOn(tableAs, '.');
     let [table, as] = breakOn(tq, '@');
@@ -238,8 +239,9 @@ AppPrototype = {
     }
     
     let sqlResult;
-    try { sqlResult = await this.runPost(R.table, R.vars, R.req, R.meta, await this.schema(), postInput, R); }
+    try { sqlResult = await this.runPost(R.table, R.vars, R.req, R.meta, await this.schema(), postInput, R, {}, cancelCall); }
     catch (someErr) {
+      if ((someErr || {}).cancelCall) throw someErr;
       if (someErr instanceof NeedAuth) { throw "Unauthorized"; }
       else { this.evError(someErr); throw someErr; }
     }
@@ -256,7 +258,9 @@ AppPrototype = {
   // returns { headers: [ {key: val }], text: return content, code: 200 }
   // code can be "unauthorized" (401)
   // if error/exception emerges it is thrown
-  request: async function (tableFormat, vars, extra = {}, cookies = {}, post = null, files = null, user = null, pass = null) {
+  request: async function (tableFormat, vars, extra = {}, cookies = {}, post = null, files = null, user = null, pass = null, cancelCall) {
+    
+    // if (!cancelCall) cancelCall = Promise.race([]);
     
     await this.block; // wait till schema is learned at the beginning
 
@@ -297,7 +301,7 @@ AppPrototype = {
         if (!_auth) {
             if (!me.auth) throw new Exception(104, new Error());
             let unprotectedSchema = (await this.schema()).map(f => Object.assign({}, f, {prot: false}));
-            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, [], {})).data[0] || null;
+            _auth = (await me.runSelect(me.auth.Q.from.table, null, me.auth.Q, Object.assign({}, R.meta, { auth: async () => ({}) }), unprotectedSchema, [], {}, cancelCall)).data[0] || null;
         }
         if (!_auth) throw new NeedAuth();
         return _auth;
@@ -310,10 +314,10 @@ AppPrototype = {
       , query: async function (qTable, qVars) { // FIXME: this is double in format
           let [qt,f] = breakOn(qTable, '.');
           let [t,as] = breakOn(qt, '@');
-          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, me.filt, arg);
+          let sqlRes = await me.runSelect(t, as, qVars, R.meta, sch, me.filt, arg, cancelCall);
           return f ? (await sqlRes.format(f)).text() : sqlRes;
       }
-      , post: (qTable, getVars, input) => me.runPost(qTable, getVars, arg, R.meta, sch, input)
+      , post: (qTable, getVars, input) => me.runPost(qTable, getVars, arg, R.meta, sch, input, undefined, {}, cancelCall)
     }
     for (let e = 0; e < this.events.onWebRequest.length; e++) {
       let fn = this.events.onWebRequest[e];
@@ -328,18 +332,20 @@ AppPrototype = {
     R.format = arg.req.format || R.format;
 
     if (R.req.isPost && typeof post === 'string') {
-      post = await inputRows(this.prsDirs, R.format, post, this.scriptContext( R.format, R.table, R.as, R.vars, R.req, R.meta, sch))
+      post = await inputRows(this.prsDirs, R.format, post, this.scriptContext( R.format, R.table, R.as, R.vars, R.req, R.meta, sch, cancelCall))
     }
 
     let fmtResult = {}, sqlResult;
     try {
         sqlResult = R.req.isPost
-           ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, post, R, R.files)
-           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: cookies} } );
+           ? await this.runPost  (R.table, R.vars, R.req, R.meta, sch, post, R, R.files, cancelCall)
+           : await this.runSelect(R.table, R.as, R.vars, R.meta, sch, this.filt, {...R.req, ...{ cookie: cookies} }, cancelCall );
         fmtResult = await sqlResult.format(R.format);
         // before it was: , R.table, Object.assign({}, R.req.vars, R.vars), Object.assign({}, {...R.req, ...{ cookie: req.cookies}}, { vars: R.vars}), R.meta, await this.schema() );
     } catch (someErr) {
-      if (someErr instanceof NeedAuth) {
+      if ((someErr || {}).cancelCall) {
+        throw someErr;
+      } else if (someErr instanceof NeedAuth) {
         fmtResult.unAuthorized = true;
       } else {
         this.evError(someErr);
@@ -359,7 +365,7 @@ AppPrototype = {
               Object.assign({}, R.vars, this.auth.contentVars || {}),
               Object.assign({}, R.meta, { auth: async () => null }),
               sch, [], // remove filters in this context
-              {...R.req, ...{ cookie: cookies } });
+              {...R.req, ...{ cookie: cookies } }, cancelCall);
           fmtResult = await sqlResult.format(f);
         } catch (someE) {
           if (someE instanceof NeedAuth) { throw new Exception(105, new Error(), { auth: conf.auth }); }
@@ -421,15 +427,22 @@ AppPrototype = {
       }
     }
 
-    let x ;
+    let cancelCall = new Promise((_, c) => req.on('close', () => c({cancelCall: true})));
+    let x;
     try {
-      x = await this.request(req.path.split('/').pop(), vars, { url: req.originalUrl }, req.cookies, post, files, user, pass);
+      x = await Promise.race([ cancelCall, this.request(req.path.split('/').pop(), vars, { url: req.originalUrl }, req.cookies, post, files, user, pass, cancelCall) ]);
     } catch (e) {
-      console.error(e.isWrapper ? e.err : e);
-      res.write(e.toString());
-      res.end();
-      next();
-      return;
+      if ((e||{}).cancelCall) {
+        res.end();
+        next();
+        return;
+      } else {
+        console.error(e.isWrapper ? e.err : e);
+        res.write(e.toString());
+        res.end();
+        next();
+        return;
+      }
     }
 
     res.status(x.status);
@@ -446,13 +459,13 @@ AppPrototype = {
   },
 
    // yeah, schema is in 'this' but on auth there is modified schema used 
-  runSelect: async function (table, as, vars, meta, sch, filt = [], dreq = {opts:{}}) { // FIXME: when is dreq missing?
+  runSelect: async function (table, as, vars, meta, sch, filt = [], dreq = {opts:{}}, cancelCall) { // FIXME: when is dreq missing?
     if (!meta) meta = this.meta;
 
     if (table === '_single') return await this.lite.query('SELECT NULL'); // TODO: run on main database
     if (table === '_empty' ) {
       let r;
-      r = Object.assign({}, this.emptyResult, { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
+      r = Object.assign({}, this.emptyResult, { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch, cancelCall) });
       return r;
     }
 
@@ -479,19 +492,19 @@ AppPrototype = {
 
     let rsql = Q.sqlSnippet(tp);
     this.evSql({sql: rsql});
-    let res = await cn.query( rsql ); 
+    let res = await cn.query( rsql, [], cancelCall ); 
     if ((dreq.opts||{}).schemaOnly) res.data = []; // with SQLite it fetches one row to know datatypes
-    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch);
+    res.format = (fmt, extraVars = {}) => this.format(res, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch, cancelCall);
     res.explainQuery = filled => (filled ? Q : S).describe();
     res.rowsTotal = async () => {
       if ((dreq.opts||{}).schemaOnly) return 0;
       let csql = Q.count().sqlSnippet(tp);
       this.evSql({sql: csql});
-      return parseInt(((await cn.query(csql)).data[0] || { count: 0 }).count, 10);
+      return parseInt(((await cn.query(csql, [], cancelCall)).data[0] || { count: 0 }).count, 10);
     }
     return res;
   },
-  runPost: async function (table, initVars, req, meta, sch, irows, dreq, files = {}) {
+  runPost: async function (table, initVars, req, meta, sch, irows, dreq, files = {}, cancelCall) {
     let me = this, results = [], affected = [], rules;
 
     let as, alias = this.alias.find(a => a.name === table);
@@ -528,7 +541,7 @@ AppPrototype = {
        }
     }
 
-    let db = await this.conn.transaction();
+    let db = await this.conn.transaction( cancelCall );
 
     // generate list of functions and execute them later in sync
     let jobLs = rowQ.map((Q,i) => async () => { // do queries and get returning rows
@@ -585,10 +598,10 @@ AppPrototype = {
       r  = results.length
       ? Object.assign({}, results[0], { data: results.reduce((R,r) => R.concat(r.data), []) })
       : this.emptyResult,
-      { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch) });
+      { format: (fmt, extraVars) => this.format(r, fmt, table, as, Object.assign({}, vars, extraVars), dreq, meta, sch, cancelCall) });
   },
 
-  scriptContext: function (format, table, tableAs, vars, req, meta, sch) {
+  scriptContext: function (format, table, tableAs, vars, req, meta, sch, cancelCall) {
     const me = this;
     let evArg = Object.assign({}, req,
         { req: Object.assign({}, {table, tableAs, format, vars}, req)
@@ -598,10 +611,10 @@ AppPrototype = {
         , query: async function (qTable, qVars) {
             let [qt,fmt] = breakOn(qTable, '.');
             let [t,as] = breakOn(qt, '@');
-            let sqlRes = await me.runSelect(t, as, qVars, meta, sch, me.filt, evArg);
+            let sqlRes = await me.runSelect(t, as, qVars, meta, sch, me.filt, evArg, cancelCall);
             return fmt ? (await sqlRes.format(fmt)).text() : sqlRes;
         }
-        , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input)
+        , post: (qTable, getVars, input) => me.runPost(qTable, getVars, evArg, meta, sch, input, undefined, {}, cancelCall)
         , opts: o => req.opts[o] || null
         , parseQuery: async function (expr, table, vars) {
             let alias = me.alias.find(a => a.name === table);
@@ -623,7 +636,7 @@ AppPrototype = {
     , Object.map(this.export, v => typeof v !== 'function' ? v : function () { return v.apply(null, [evArg].concat(Array.from(arguments))); } ));
   },
 
-  format: async function (queryResult, format, table, tableAs, vars, req, meta, sch) {
+  format: async function (queryResult, format, table, tableAs, vars, req, meta, sch, cancelCall) {
 
     let F = await this.findTemplate(format);
     let me = this, result = {
@@ -631,6 +644,7 @@ AppPrototype = {
       headers: [],
       text: () => {
         if (result.error) {
+          if ((result.error || {}).cancelCall) throw result.error;
           me.evError(result.error);
           throw new Exception(503, result.error, { format: format, vars: vars, table: table });
         } else return result.out
@@ -638,13 +652,13 @@ AppPrototype = {
     }; // this is returned
 
     return new Promise((ok, bad) => {
-      F.script.runInNewContext(Object.assign({}, this.scriptContext(format, table, tableAs, vars, req, meta, sch), F.ctx
+      F.script.runInNewContext(Object.assign({}, this.scriptContext(format, table, tableAs, vars, req, meta, sch, cancelCall), F.ctx
         , { result: Object.assign({}, queryResult, { format: async (f,a) => (await queryResult.format(f,a)).text() }) // here we want just output text, error are thrown
         ,   contentType: (t,c) => result.contentType = t
         ,   httpStatus : (n  ) => result.status = n
         ,   header     : (k,v) => result.headers.push({ key: k, value: v})
         ,   __success__: ok
-        ,   __failure__: e => { console.error(e); result.error = e.toString(); bad(e); }
+        ,   __failure__: e => { if ( !(e||{}).cancelCall) console.error(e); result.error = e.toString(); bad(e); }
         ,   print:   x => { if (x !== undefined && x !== null) result.out += Buffer.isBuffer(x) ? x.toString() : x; }
         ,   printLn: x => { result.out += Buffer.isBuffer(x) ? x.toString() : x; }
         }));
@@ -660,7 +674,7 @@ AppPrototype = {
       newTable: { value: async function (name, rows) {
         let names = [];
         rows.forEach(r => Object.keys(r).forEach(n => { if (!names.includes(n)) names.push(n) }));
-        let db = await a.conn.transaction();
+        let db = await a.conn.transaction( Promise.race([]) );
         await db.exec('CREATE TABLE ' + name + ' (' + names.join(', ') + ')'); // TODO: escaping and sutff
         let ins = 'INSERT INTO ' + name + '(';
         for (let r = 0; r < rows.length; r++)
@@ -674,8 +688,8 @@ AppPrototype = {
         let [table, fmt] = breakOn(tf, '.');
         let [t, as] = breakOn(table, '@');
         const sch = await a.schema();
-        let qRes = await a.runSelect(t, as, vars, a.meta, sch, a.filt, {});
-        return !fmt ? qRes : (await a.format(qRes, fmt, table, as, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, sch )).text();
+        let qRes = await a.runSelect(t, as, vars, a.meta, sch, a.filt, {}, Promise.race([]) ); // TODO: cancelable stuff
+        return !fmt ? qRes : (await a.format(qRes, fmt, table, as, vars, { isMain: false, isPost: false, vars: vars, url: tf}, meta, sch, Promise.race([]))).text();
       } }
     })
   },
@@ -907,15 +921,16 @@ async function inputRows(dirs, fmt, body, context = {}) {
     , console: console
     , result: r => irows = r
     , __success__: ok
-    , __failure__: e => { console.error(e); throw e; bad(e); }
+    , __failure__: e => { /* console.error(e); */ bad(e); }
     }))
   ).then(() => {
       if (!Array.isArray(irows)) throw "Input rows must be array of objects";
       irows.forEach(i => { if (typeof i !== 'object' || !i) throw "Input rows must be array of objects"; } );
       return irows; 
   }).catch(e => {
-    console.error(e);
-    this.evError(e);
+    throw e;
+    // console.error(e);
+    // this.evError(e);
   });
 }
 

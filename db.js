@@ -2,7 +2,7 @@ const url = require('url');
 const fs = require('fs');
 const Lite = require('sqlite'); //sqlite is wrapper for sqlite3
 const Lite3 = require('sqlite3');
-const { breakOn, zipObject, uriArgs, parseBool } = require('./toolbox.js');
+const { breakOn, zipObject, uriArgs, parseBool, isPending } = require('./toolbox.js');
 
 trace = x => { console.log(x); return x; }
 
@@ -129,18 +129,44 @@ async function DbConnPg(props) {
   pg.types.setTypeParser(701, parseFloat);
   pg.types.setTypeParser(700, parseFloat);
 
-  return Object.create(DbConnPg.Proto, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, enumerable: true, writable: true } });
+  const adm = { value: new pg.Pool(Object.assign({}, props, { max: 1 })) };
+  return Object.create(DbConnPg.Proto, { pg: { value: pg }, props: { value: props }, pool: { value: new pg.Pool(props) }, _schema: { value: null, enumerable: true, writable: true }, _admin: adm });
 }
 DbConnPg.Proto = {
   // end:   async function () { return null; /* await this.pool.end() */ },
-  query: async function (q, args = []) {
+  query: async function (q, args = [], cancelCall) {
+    if (cancelCall && !isPending(cancelCall)) { // just to save some resource if there is canceled query
+      throw { cancelCall: true };
+    }
+
     const client = await this.pool.connect();
-    let res = this.runQ(q, args, client);
-    client.release();
-    return res;
+    const cancelFn = async () => {
+      await this._admin.query("SELECT pg_cancel_backend(" + client.processID + ")");
+
+      // I really don't know why but without special query the previous query doesn't disappear. So, easiest possible query.
+      await client.query("SELECT 1");
+    }
+    try {
+      return this.runQ(q, args, client, cancelCall, cancelFn);
+    }
+    catch (e) { throw e; }
+    finally   { client.release(); }
   },
-  runQ: async function (q, args = [], client) {
-    const R = await client.query(q, args);
+  runQ: async function (q, args = [], client, cancelCall, cancelQueryFn) {
+    // const R = await client.query(q, args);
+    let R;
+    try {
+      R = await Promise.race([client.query(q, args), cancelCall]);
+    }
+    catch (e) {
+      if ((e || {}).cancelCall) {
+        // client.cancel();
+        await cancelQueryFn();
+        throw e;
+      }
+      throw e;
+    }
+
     let r = R.rows;
     let o = R.fields.map(f => f.name);
     let t = R.fields.map(f => {
@@ -152,22 +178,40 @@ DbConnPg.Proto = {
     })
     return { data: r, cols: o, types: t.map(([_,t]) => t), rawTypes: t.map(([t]) => t) };
   },
-  transaction: async function () {
+  transaction: async function (cancelCall) {
+    if (cancelCall && !isPending(cancelCall)) { // just to save some resource if there is canceled query
+      throw { cancelCall: true };
+    }
+    
     const client = await this.pool.connect();
     let q = this.query.bind(this);
     await client.query('BEGIN');
+    const cancelFn = async () => {
+      await this._admin.query("SELECT pg_cancel_backend(" + client.processID + ")");
+
+      // I really don't know why but without special query the previous query doesn't disappear. So, easiest possible query.
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      try { await client.query("SELECT 1"); } catch (_) {}
+    }
+
     return {
       commit: async () => { await client.query('COMMIT'); client.release(); },
-      query:  (sql,args = []) => this.runQ(sql, args, client),
+      query:  (sql,args = []) => this.runQ(sql, args, client, cancelCall, cancelFn), // FIXME
       exec:   async (sql, args = []) => {
         try {
-          let { rowCount } = await client.query(sql, args);
+          let { rowCount } = await Promise.race( [ client.query(sql, args), cancelCall ] );
           return rowCount;
         } catch (SQLE) {
-          await client.query('ROLLBACK');
-          client.release();
-          throw SQLE;
-        } 
+          if ( (SQLE||{}).cancelCall ) {
+            await cancelFn();
+            client.release();
+            throw SQLE;
+          } else {
+            await client.query('ROLLBACK');
+            client.release();
+            throw SQLE;
+          }
+        }
       }
     }
   },
