@@ -36,7 +36,7 @@ sslFiles = c => {
 
 function urlToConnection(dbUrl) {
   let u = url.parse(dbUrl);
-  if (['postgresql:','pg:','psql:'].includes(u.protocol)) {
+  if (['postgresql:','postgres:','pg:','psql:'].includes(u.protocol)) {
     return Object.assign({},
       sslFiles(mapInt(flatToTree(uriArgs(u.query)))),
       { type: 'pg'
