@@ -42,8 +42,8 @@ require('zazler')("mysql://root:pass@127.0.0.1/dbname", { read: "hello" } )
 
 In addition to URL-style connections, you can use objects. This method is more dynamic because you can use every connection parameter depending on library. For postgresql, it is library pg and for MySQL it is mysql.
 
-  - `{ type: 'pg', hostname: '127.0.0.1', database: 'foo'}`
-  - `{ type: 'my', hostname: '127.0.0.1', database: 'foo'}`
+  - `{ type: 'pg', host: '127.0.0.1', database: 'foo'}`
+  - `{ type: 'my', host: '127.0.0.1', database: 'foo'}`
 
 For exact connection parameters, take a look at these libraries: [pg](https://www.npmjs.com/package/pg), [mysql](https://www.npmjs.com/package/mysql) and [sqlite](https://www.npmjs.com/package/sqlite)
 
