@@ -1,6 +1,7 @@
 const P = require('parsimmon');
 const util = require('util');
-const testSql = require('sqlite').open(':memory:', { Promise });
+const sqlite3 = require('sqlite3');
+const testSql = require('sqlite').open({ filename: ':memory:', driver: sqlite3.Database });
 const Opts = require('./opts');
 const {QFunctions} = require('./query-functions');
 const { trace } = require('./toolbox');
@@ -10,7 +11,7 @@ const { trace } = require('./toolbox');
 SqlPg = {
     type: "pg"
   , hasBooleans: true
-  , esc:  v => ("'" + v.replace(/'/g, '\\\'') +  "'")
+  , esc:  v => ("'" + v.replace(/'/g, '\'\'') +  "'")
   , name: v => ('"' + v.replace(/"/g, '""') + '"')
   , lastInsertId: "lastval()"
 }
@@ -499,7 +500,8 @@ QSelect.prototype = protoQ({
     return new QSelect(this.select, this.from, null, this.group, this.having, this.order, this.limit, this.opts);
   },
   count: function () {
-    return new QSelect(new QList([ new QAs(new QRaw('count(*)'), new QName('count')) ]), this.from, this.where, this.group, this.having, null, null, Object.assign({}, this.opts, { distinct: false }));
+    // FIXME this is hack, hack hack (look at app.js to understand)
+    return new QSelect(new QList([ new QAs(new QRaw('1'), new QName('c')) ]), this.from, this.where, this.group, this.having, null, null, Object.assign({}, this.opts, { distinct: false }));
   },
   // here  is possible to make one traverse function but as far as I know using this.select[fn] is much slower than this.select.travToken
   mapSelect(fn) {

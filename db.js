@@ -153,7 +153,6 @@ DbConnPg.Proto = {
     finally   { client.release(); }
   },
   runQ: async function (q, args = [], client, cancelCall, cancelQueryFn) {
-    // const R = await client.query(q, args);
     let R;
     try {
       R = await Promise.race([client.query(q, args), cancelCall]);
@@ -195,8 +194,9 @@ DbConnPg.Proto = {
     }
 
     return {
-      commit: async () => { await client.query('COMMIT'); client.release(); },
-      query:  (sql,args = []) => this.runQ(sql, args, client, cancelCall, cancelFn), // FIXME
+      commit  : async () => { await client.query('COMMIT'  ); client.release(); },
+      rollback: async () => { await client.query('ROLLBACK'); try { client.release(); } catch (_) {} },
+      query:  (sql,args = []) => this.runQ(sql, args, client, cancelCall, cancelFn),
       exec:   async (sql, args = []) => {
         try {
           let { rowCount } = await Promise.race( [ client.query(sql, args), cancelCall ] );
@@ -248,7 +248,7 @@ DbConnPg.Proto = {
     let b = { read: false, write: false, hidden: true, prot: false };
     this._schema =
       tables.rows.map( t => Object.assign({}, b, { _: 'table', name: t.name, comment: t.comment })).concat (
-      fields.rows.map( f => Object.assign({}, b, { _: 'field', name: f.attname, table: f.relname, comment: f.comment, autonum: false, type: f.type, genType: tmap.get(f.type) || 'str' })))
+      fields.rows.map( f => Object.assign({}, b, { _: 'field', name: f.attname, table: f.relname, comment: f.comment, autonum: false, type: f.type, genType: tmap.get(f.type) || 'str', notnull: f.attnotnull })))
     // constr.rows.map( r => { _: '
     client.release();
   }
@@ -277,7 +277,10 @@ DbConnPg.types = {
   , 16   : [ 'boolean', 'bool' ]
   , 25   : [ 'text', 'str']
   , 1043 : [ 'varchar', 'str']
+  , 1007 : [ 'json'  , 'str' ]
   , 114  : [ 'json', 'str']
+  , 3802 : [ 'jsonb'  , 'str' ]
+  , 2278 : [ 'void', 'str']
   , 1009 : [ '_regproc', 'str']
   , 705  : [ 'text', 'str']    /// TODO NOT SURE
   , 1042 : [ 'bpchar', 'str']
@@ -378,7 +381,8 @@ DbConnMy.Proto = {
       client.query('BEGIN', err => {
         if (err) { throw_(err); return; }
         return_({
-          commit: () => { client.query('COMMIT', () => client.release() ) }
+          commit  : () => { client.query('COMMIT'  , () => client.release() ) }
+        , rollback: () => { client.query('ROLLBACK', () => { try { client.release(); } catch (_) {} } ) }
         , query: (sql, args = []) => {
             return new Promise(ok => client.query(sql, args, (err,res,fld) => ok({ data: res, cols: fld.map(f => f.Field), types: fields.map(f => f.Type), rawTypes: fields.map(f => f.Type) })));
         }
@@ -449,7 +453,7 @@ DbConnMy.types = {
 }
 
 async function DbConnLt(props) {
-  let conn = await Lite.open(props.filename || ':memory:', { mode: Lite3.OPEN_READWRITE });
+  let conn = await Lite.open({ filename: props.filename || ':memory:', driver: Lite3.Database, mode: Lite3.OPEN_READWRITE });
   let pragma, P = DbConnLt.Pragmas;
   for (pragma in P)
     if (props[pragma])
@@ -488,6 +492,7 @@ DbConnLt.Proto = {
         let {changes, lastID} = await client.run(sql, args);
         return changes;
       }
+    , rollback: async ()  => { }
     , commit: async ()  => {
         // await client.run('COMMIT');
         // await client.close();
@@ -499,10 +504,11 @@ DbConnLt.Proto = {
     return this._schema;
   },
   learn: async function () {
+    // FIXME: notnull is missing
     const client = this.conn;
     let tables = await client.all(DbConnLt.queryTables);
     let fields = [];
-    let base = { read: false, write: false, hidden: false, prot: false };
+    let base = { read: false, write: false, hidden: false, prot: false, notnull: false };
     for (let t = 0; t < tables.length; t++) {
       let f = await client.all(DbConnLt.queryFields(tables[t].name))
       fields = fields.concat(f.map( f => Object.assign({_: 'field', name: f.name, table: tables[t].name }, base)));
@@ -588,7 +594,8 @@ DbConnOr.Proto = {
     return {
       query: (sql, args = []) => client.execute(sql, args)
     , exec:   async (sql, args = []) => (await client.execute(sql, args)).rowsAffected // TODO error handling and rollback
-    , commit: async () => { await client.execute('COMMIT'); client.release(); }
+    , commit:   async () => { await client.execute('COMMIT');   client.release(); }
+    , rollback: async () => { await client.execute('ROLLBACK'); try { client.release(); } catch (_) {} }
     }
   },
   schema: async function () {
@@ -685,7 +692,8 @@ DbConnDb2.Proto = {
               })
             })
         )
-        , commit: async () => (new Promise((ok, failure) => db.query('COMMIT', [], (err, R) => (err ? failure(err) : ok())) ))
+        , rollback: async () => (new Promise((ok, failure) => db.query('COMMIT'  , [], (err, R) => (err ? failure(err) : ok())) ))
+        , commit:   async () => (new Promise((ok, failure) => db.query('ROLLBACK', [], (err, R) => (err ? failure(err) : ok())) ))
         })
       });
     }) });

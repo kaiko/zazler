@@ -1,6 +1,6 @@
 {
   "name": "zazler",
-  "version": "1.0.58",
+  "version": "1.0.64",
   "author": "Kaiko Kaur <kaiko.kaur@gmail.com>",
   "main": "app.js",
   "license": "Apache-2.0",
@@ -30,22 +30,23 @@
     }
   ],
   "dependencies": {
-    "cookie-parser": "^1.4.3",
-    "express": "^4.16.3",
-    "express-form-data": "^2.0.5",
-    "md5": "^2.2.1",
-    "mysql": "latest",
-    "parsimmon": "^1.7.3",
-    "pg": "latest",
-    "sqlite": "latest",
-    "wildcard": "^1.1.2"
+    "cookie-parser": "^1.4.5",
+    "express": "^4.17.1",
+    "express-form-data": "^2.0.14",
+    "md5": "^2.3.0",
+    "mysql": "^2.18.1",
+    "parsimmon": "^1.16.0",
+    "pg": "^8.4.1",
+    "sqlite": "^4.0.15",
+    "sqlite3": "^5.0.0",
+    "wildcard": "^2.0.0"
   },
   "devDependencies": {
     "request": "latest",
-    "mocha": "^5.2.0"
+    "mocha": "latest"
   },
   "engines": {
-    "node": ">=8.0.0"
+    "node": ">=10.0.0"
   },
   "scripts": {
     "test": "mocha"
